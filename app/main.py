@@ -35,6 +35,8 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals["version"] = os.environ.get("APP_VERSION", "dev")
+# Ingest-only Dash0 token for browser monitoring, from Secret app-credentials. It ends up in the page.
+templates.env.globals["dash0_web_token"] = os.environ.get("DASH0_WEB_TOKEN")
 
 
 @app.get("/healthz", response_class=PlainTextResponse)
