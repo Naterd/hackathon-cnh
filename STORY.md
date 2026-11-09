@@ -40,4 +40,10 @@ We asked it to check the pods' events, not only the Job's. It revised its findin
 
 ## After
 
-PR "Fix Radar Checks findings for the app": a PodDisruptionBudget (`minAvailable: 1`), `automountServiceAccountToken: false`, and a soft `topologySpreadConstraints` for Deployment `app`. Run Radar Checks again for `slidekick` once it has synced.
+PR [#13](https://github.com/Naterd/hackathon-cnh/pull/13) "Fix Radar Checks findings for the app": a PodDisruptionBudget (`minAvailable: 1`), `automountServiceAccountToken: false`, and a soft `topologySpreadConstraints` for Deployment `app`.
+
+**Shipped and verified through Radar's MCP** (Nov 9, 1:22 MT): `fleet_list_gitops` showed Argo CD auto-syncing `291e088` (`deploy: 333fd51`). `wait_for` showed Deployment `app` at generation 8, rolled out 2/2. https://slidekick.us returns `version 333fd51`. (Triggering the sync through Radar's `manage_gitops` was refused, because our Radar user can't `patch` Argo CD Applications, so Argo CD's own auto-sync did it.)
+
+**Checks after** (`get_cluster_audit`, namespace `slidekick`): **6 → 3 findings.**
+- Fixed: `missingPDB`, `missingTopologySpread`, `automountServiceAccountToken`.
+- Still open, as expected: `readOnlyRootFs` (needs testing with the Dash0 injection), `podHARisk` (the default pool has one node; the soft spread takes effect when a second one appears), `orphanConfigMapSecret` on `app-credentials` (the app doesn't read it yet).

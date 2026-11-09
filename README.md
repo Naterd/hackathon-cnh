@@ -128,8 +128,8 @@ Judged on: running on Kubernetes with Radar connected; Radar's UI and MCP used t
 - [x] Radar's MCP in use: Checks, Issues, events, investigations
 - [x] AI investigation of a real issue, shared and corrected by a follow-up ([story](#sponsor-tools), [`STORY.md`](STORY.md))
 - [x] Checks "before" recorded in [`STORY.md`](STORY.md)
-- [ ] Checks "after": merge [#13](https://github.com/Naterd/hackathon-cnh/pull/13), run Checks again for `slidekick`, and fill in `STORY.md`. Owner: Joel.
-- [ ] Ship one deploy **through Radar's MCP**, using the `ship` skill (sync, wait for the rollout, check the version). Owner: Joel.
+- [x] Checks "after": `slidekick` went from 6 to 3 findings after [#13](https://github.com/Naterd/hackathon-cnh/pull/13) ([`STORY.md`](STORY.md#after))
+- [x] One deploy verified **through Radar's MCP**: Argo CD's sync state, the rollout with `wait_for`, and the live version ([`STORY.md`](STORY.md#after)). Radar can't trigger a sync, because our Radar user lacks `patch` on Argo CD Applications.
 - [ ] Act on the investigation's decision: pre-scale the ingest spot pool before V2. Owner: whoever runs V2.
 - [ ] *(bonus)* Fix the high Checks finding on the ARC controller (`arc-systems`). Owner: Nate.
 - [ ] Draft the 5:30 story from Radar's timeline with the `demo-story` skill, at about 5:00. Owner: Joel.
