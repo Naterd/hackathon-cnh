@@ -238,12 +238,12 @@ async function lookup(photo) {
     }
     if (response.status === 429) return "Saved to your roll. That's a lot of photos at once: tap Retry on the roll in a minute.";
     if (!response.ok) return "Saved to your roll. Search isn't answering, so it'll try again later.";
-    const { talks, degraded } = await response.json();
+    const { talks, degraded, meta } = await response.json();
     if (!talks.length) {
       await deletePhoto(photo.id);
       return "No talk matched that photo. Try again closer to the slide.";
     }
-    Object.assign(photo, { state: "matched", talks, pick: 0, degraded });
+    Object.assign(photo, { state: "matched", talks, pick: 0, degraded, meta });
     await putPhoto(photo);
     return "matched";
   } finally {
@@ -296,6 +296,8 @@ async function openMatch(id) {
   renderMatch(photo);
 }
 
+const secs = (ms) => `${(ms / 1000).toFixed(1)} s`;
+
 function renderMatch(photo) {
   const talk = photo.talks[photo.pick];
   const moment = talk.moments[0];
@@ -312,6 +314,12 @@ function renderMatch(photo) {
 
   $("match-tag").textContent = `Matched · slide ${moment.n + 1}`;
   $("match-meta").textContent = `KubeCon NA 2024 · your photo ${time(photo.takenAt)}`;
+  const m = photo.meta;
+  $("match-timing").hidden = !m;
+  if (m) {
+    $("match-timing").textContent = `Matched in ${secs(m.total_ms)} · reading the slide ${secs(m.ocr_ms)}, search ${secs(m.search_ms)}` + (m.trace_id ? ` · trace ${m.trace_id.slice(0, 8)}` : "");
+    $("match-timing").title = m.trace_id ? `Dash0 trace ${m.trace_id}` : "";
+  }
   $("match-title").textContent = talk.title;
   $("presenter").hidden = !talk.speakers;
   $("initials").textContent = talk.speakers ? initials(talk.speakers) : "";
