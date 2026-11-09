@@ -16,6 +16,11 @@ SlideKick: photograph a KubeCon slide and get the talk, the speaker and a YouTub
   4. Wait for the review and fix what it finds.
   5. Merge with `gh pr merge --squash --delete-branch`. The merge deploys.
 
+**Don't build or pull images on your laptop.** Pulls over the venue wifi are slow, and the fast loops below don't need an image.
+- **App:** in `app/`, run `uvicorn main:app --reload --port 8080` (any free port). Reload on save is the inner loop.
+- **Ingest:** `ingest/run.sh` ships your checkout's code to the cluster as a ConfigMap, so a code change runs on GKE without an image build. Only a change to `ingest/Dockerfile` or `ingest/requirements.txt` needs a new image. Push the branch, and `ingest-image` builds `ghcr.io/naterd/hackathon-cnh/ingest:<sha>`. Run that tag with `INGEST_IMAGE=ghcr.io/naterd/hackathon-cnh/ingest:<sha> ingest/run.sh ...`. `:latest` changes only on `main`.
+- **Images:** GitHub Actions builds them. The app image is first built when the PR merges, so Gitar's review is where a Dockerfile or dependency mistake gets caught. Check your change against `.gitar/review/main.md` before opening the PR.
+
 ## Writing code
 
 - Write the least code that does the job. No speculative helpers, options, config or abstractions.

@@ -25,7 +25,13 @@ Report these as blocking review findings.
    - A Job on the spot pool needs `nodeSelector: {workload: ingest}`, the toleration for `workload=ingest:NoSchedule`, and CPU and memory requests and limits.
    - Spot nodes get preempted, so a talk must be safe to re-run: skip finished work, and overwrite documents by stable id.
    - Don't call YouTube for captions or video again. It rate-limits within hours (HTTP 429). New talks get Whisper.
-7. **Licensing.** Link to YouTube and to the speakers' deck PDFs. Block code that stores or serves the talk videos or the deck PDFs from our own app or bucket for users to download.
+7. **The image is first built after the merge.** Nobody builds images locally, and CI builds the app image only on `main`, so this review is the last check before a broken pod. Block:
+   - A new third-party import in `app/` without a pinned entry in `app/requirements.txt`, or in `ingest/` without one in `ingest/requirements.txt`. It works on a laptop that already has the package and fails in the pod.
+   - A file the app reads at runtime outside `app/`, or matched by `.dockerignore`. The Dockerfile copies only `app/`.
+   - Dropping `ARG APP_VERSION` / `ENV APP_VERSION` from the Dockerfile. The footer prints it, and the `ship` skill checks it to prove a deploy.
+   - A Dockerfile `CMD` with `--reload` or `--workers`. It must stay one uvicorn process.
+   - A new module under `ingest/` that isn't added to the `--from-file` list in `ship_code` in `ingest/run.sh`. Jobs run the ConfigMap copy in `/code`, so the import fails on the cluster.
+8. **Licensing.** Link to YouTube and to the speakers' deck PDFs. Block code that stores or serves the talk videos or the deck PDFs from our own app or bucket for users to download.
 
 ## Worth a comment, not blocking
 
