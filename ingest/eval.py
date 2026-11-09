@@ -192,6 +192,7 @@ def run_one(index, videos, case, seed, save_dir, upload_px):
     result = {**case, "talk1": ids[:1] == [case["talk_id"]], "talk3": case["talk_id"] in ids[:3],
               # the ranking this replaced (sum of every hit's score), among the same three talks
               "talk1_total": by_total == case["talk_id"], "degraded": r["degraded"],
+              "fp_sure": r["fingerprint"]["sure"], "fp_cosine": r["fingerprint"]["cosine"],
               "moment": bool(top) and ids[0] == case["talk_id"] and top["start_sec"] <= case["t"] < top["end_sec"],
               # an adjacent slide still lands the viewer close: within 30 s either side of that slide
               "moment_near": bool(top) and ids[0] == case["talk_id"]
@@ -212,6 +213,9 @@ def summarize(results):
                 "talk@3": round(sum(r["talk3"] for r in rs) / len(rs), 3),
                 "talk@1_by_total": round(sum(r["talk1_total"] for r in rs) / len(rs), 3),
                 "degraded": sum(r["degraded"] for r in rs),  # lookups that fell back to keywords only (HTTP 429)
+                # how often the pixel fingerprint decided alone, and how often it was right when it did
+                "fp_sure": sum(r["fp_sure"] for r in rs),
+                "fp_sure_right": sum(r["fp_sure"] and r["talk1"] for r in rs),
                 "moment": round(sum(r["moment"] for r in rs) / len(rs), 3),
                 "moment±30s": round(sum(r["moment_near"] for r in rs) / len(rs), 3),
                 "p50_s": round(statistics.median(lat), 2),

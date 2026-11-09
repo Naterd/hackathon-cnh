@@ -33,6 +33,11 @@ LOGO_WORDS = ("kubec", "ubecon", "nativec", "cloudnat", "america")  # OCR misrea
 LAYOUT = Path(__file__).with_name("layout-kubecon-na-2024.png")
 FRAME = np.float32([[0, 0], [1280, 0], [1280, 720], [0, 720]])
 MIN_INLIERS = 12           # matched points that must agree before we believe the recording is in the photo
+# A side index with one pixel fingerprint (`fp`) per still, same ids as INDEX: ingest/details.py builds it.
+FP_INDEX = "kubecon-details"
+FP_MIN = 0.7               # cosine below this is noise: leave the fingerprint out of the ranking
+FP_SURE = (0.8, 0.03)      # cosine, and lead over the best other talk, at which the fingerprint decides alone:
+                           # 96% right at this bar on simulated photos against 2,222 stills
 _local = threading.local()
 _layout_lock, _layout = threading.Lock(), None
 
@@ -41,7 +46,7 @@ class Throttled(Exception):
     """Elasticsearch kept answering 429: the inference service is over its rate limit."""
 
 
-def es(method, path, body=None, tries=3):
+def es(method, path, body=None, tries=2):
     req = urllib.request.Request(os.environ["ELASTIC_URL"].rstrip("/") + path, method=method,
                                  data=None if body is None else json.dumps(body).encode(),
                                  headers={"Authorization": "ApiKey " + os.environ["ELASTIC_ES_API_KEY"],
@@ -55,7 +60,8 @@ def es(method, path, body=None, tries=3):
                 raise
             if attempt == tries - 1:
                 raise Throttled(path) from e
-            time.sleep(1 + attempt)  # the limit refills within about a second
+            time.sleep(1)  # the limit refills within about a second. A 429 itself takes about 4 s to come
+            # back, so more tries make a throttled lookup very slow: 3 tries measured 16 s.
 
 
 def _sift():
@@ -195,8 +201,8 @@ def image_object(img):
     return {"type": "image", "format": "base64", "value": "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()}
 
 
-def prepare(photo_bytes):
-    """Phone photo -> (image object, OCR text, what was found: recording, screen or photo).
+def flatten(photo_bytes):
+    """Phone photo -> (image, OCR text, what was found: recording, screen or photo).
 
     recording: a boxed KubeCon recording is in the photo. Keep only the slide box, which is what the index
                holds for those talks, cut from the full-size photo so small text survives.
@@ -219,7 +225,7 @@ def prepare(photo_bytes):
         big = cv2.warpPerspective(full, m, size)
         words = ocr(big)
         img = cv2.resize(big, (w, h), interpolation=cv2.INTER_AREA)  # the size of the indexed stills
-        return image_object(img), " ".join(t for t, _, _ in words), "recording"
+        return img, " ".join(t for t, _, _ in words), "recording"
     found, corners = "photo", find_screen(img)
     if corners is not None:
         m = cv2.getPerspectiveTransform(corners / s, FRAME)
@@ -232,11 +238,42 @@ def prepare(photo_bytes):
         words = [wd for wd in words if x <= wd[1] < x + w and y <= wd[2] < y + h]
     else:  # the recording's logo may still be in view, and its text matches every keynote still
         words = [wd for wd in words if not any(k in wd[0].lower() for k in LOGO_WORDS)]
-    return image_object(img), " ".join(t for t, _, _ in words), found
+    return img, " ".join(t for t, _, _ in words), found
+
+
+def prepare(photo_bytes):
+    """Phone photo -> (image object for the semantic field, OCR text, what was found)."""
+    img, text, found = flatten(photo_bytes)
+    return image_object(img), text, found
+
+
+def fingerprint(img):
+    """The image as 576 numbers: 32x18 grey pixels, mean removed, unit length. None for a blank image.
+    Must match fingerprint() in ingest/details.py, which made the `fp` vectors in FP_INDEX."""
+    g = cv2.resize(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (32, 18), interpolation=cv2.INTER_AREA).astype(np.float32).ravel()
+    g -= g.mean()
+    norm = float(np.linalg.norm(g))
+    return None if norm < 1 else (g / (norm + 1e-6)).tolist()
+
+
+def fingerprint_hits(img, event, k=20):
+    """Stills whose pixels look like img, best first, as (hit, cosine). A plain kNN: no inference call, about
+    0.1 s. It only means something when img is lined up with the still, so cosine tells us whether to trust it."""
+    vector = fingerprint(img)
+    if vector is None:
+        return []
+    try:
+        hits = es("POST", f"/{FP_INDEX}/_search", {
+            "size": k, "_source": {"excludes": ["thumb", "fp"]},
+            "knn": {"field": "fp", "query_vector": vector, "k": k, "num_candidates": 200}})["hits"]["hits"]
+    except (Throttled, urllib.error.URLError, TimeoutError):  # no side index, or it's unreachable: do without
+        return []
+    # dot_product on unit vectors: Elasticsearch scores it (1 + cosine) / 2
+    return [(h, 2 * h["_score"] - 1) for h in hits if h["_source"].get("event", event) == event]
 
 
 def lookup(photo_bytes, event="kubecon-na-2024", size=50, index=INDEX):
-    image, text, found = prepare(photo_bytes)
+    img, text, found = flatten(photo_bytes)
     only_frames = [{"term": {"source": "frame"}}, {"term": {"event": event}}]
     source = {"excludes": ["slide", "said", "abstract"]}
     keywords = {"bool": {"filter": only_frames, "must": {
@@ -245,7 +282,7 @@ def lookup(photo_bytes, event="kubecon-na-2024", size=50, index=INDEX):
     # (7-13 s instead of 2 s, measured Nov 9). If one is ever needed, it goes inside the knn clause.
     retrievers = [{"standard": {"query": {"knn": {
         "field": "slide", "k": 20, "num_candidates": 100,
-        "query_vector_builder": {"embedding": {"input": image}}}}}}]
+        "query_vector_builder": {"embedding": {"input": image_object(img)}}}}}}]
     if text:
         retrievers += [
             {"standard": {"query": keywords}},
@@ -254,28 +291,49 @@ def lookup(photo_bytes, event="kubecon-na-2024", size=50, index=INDEX):
     body = {"size": size, "_source": source,
             "retriever": {"rrf": {"retrievers": retrievers, "rank_window_size": 100}}  # must be >= size
             if len(retrievers) > 1 else retrievers[0]}
-    degraded = False
-    try:
-        hits = es("POST", f"/{index}/_search", body)["hits"]["hits"]
-    except (Throttled, urllib.error.URLError, TimeoutError):
-        # The image and text-to-image legs need the inference service. Without it, the slide's words alone
-        # still find the talk for most slides, with no inference call.
-        degraded = True
-        hits = es("POST", f"/{index}/_search", {"size": size, "_source": source, "query": keywords})["hits"]["hits"] if text else []
+
+    # The pixel fingerprint first: it takes 0.1 s and no inference call.
+    fp = fingerprint_hits(img, event) if found != "photo" else []
+    cosine = fp[0][1] if fp else 0.0
+    best_talk = fp[0][0]["_source"]["talk_id"] if fp else None
+    lead = cosine - max([c for h, c in fp if h["_source"]["talk_id"] != best_talk], default=0.0)
+    sure = cosine >= FP_SURE[0] and lead >= FP_SURE[1]
+
+    degraded, hits = False, []
+    if not sure:  # when the photo lines up with one still pixel for pixel, the other legs can't add anything
+        try:
+            hits = es("POST", f"/{index}/_search", body)["hits"]["hits"]
+        except (Throttled, urllib.error.URLError, TimeoutError):
+            # The image and text-to-image legs need the inference service. Without it, the slide's words
+            # and the fingerprint still find the talk for most photos, with no inference call.
+            degraded = True
+            hits = es("POST", f"/{index}/_search", {"size": size, "_source": source, "query": keywords})["hits"]["hits"] if text else []
+
+    # Merge the rankings by rank (RRF, k = 60), in code: the fingerprint lives in another index.
+    docs, score = {}, {}
+    for rank, h in enumerate(hits):
+        docs[h["_id"]], score[h["_id"]] = h["_source"], 1 / (61 + rank)
+    if cosine >= FP_MIN:
+        for rank, (h, _) in enumerate(fp):
+            docs.setdefault(h["_id"], h["_source"])
+            score[h["_id"]] = score.get(h["_id"], 0.0) + 1 / (61 + rank)
+
     talks = {}  # group by talk in code: semantic fields don't aggregate
-    for h in hits:  # best first
-        s = h["_source"]
+    for doc_id in sorted(score, key=score.get, reverse=True):
+        s = docs[doc_id]
         t = talks.setdefault(s["talk_id"], {"talk_id": s["talk_id"], "title": s["title"],
-                                            "speakers": s.get("speakers_text", ""), "score": h["_score"],
+                                            "speakers": s.get("speakers_text", ""), "score": score[doc_id],
                                             "top3": 0.0, "total": 0.0, "moments": []})
         if len(t["moments"]) < 3:
-            t["top3"] += h["_score"]
-        t["total"] += h["_score"]
-        t["moments"].append({"id": h["_id"], "start_sec": s["start_sec"], "end_sec": s["end_sec"], "url": s["url"]})
+            t["top3"] += score[doc_id]
+        t["total"] += score[doc_id]
+        t["moments"].append({"id": doc_id, "start_sec": s["start_sec"], "end_sec": s["end_sec"], "url": s["url"]})
     # Rank talks by their best single hit, then by their best three. Summing every hit (`total`) mostly
-    # counts hits, because RRF scores are nearly flat: ten weak hits beat one still ranked first on every leg.
+    # counts hits, because rank scores are nearly flat: ten weak hits beat one still ranked first on every leg.
     ranked = sorted(talks.values(), key=lambda t: (t["score"], t["top3"]), reverse=True)
-    return {"ocr_text": text, "found": found, "degraded": degraded, "talks": ranked[:3]}
+    return {"ocr_text": text, "found": found, "degraded": degraded,
+            "fingerprint": {"cosine": round(cosine, 3), "lead": round(lead, 3), "sure": sure},
+            "talks": ranked[:3]}
 
 
 def still_data_url(doc_id):

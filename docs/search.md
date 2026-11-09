@@ -54,7 +54,11 @@ A real still, with `slide` and `said` left out:
    - **Encode the result** as a JPEG under 900 KB; the field's limit is 1 MB of decoded bytes. Send it as an image object, not a bare data URL: `{"type": "image", "format": "base64", "value": "data:image/jpeg;base64,…"}`.
 
    `prepare()` in `docs/search_example.py` does all of this, and needs `layout-kubecon-na-2024.png` next to it. Upload the photo as large as you can afford: the slide box is cut from the full-size photo, and on a projector photo shrunk to 1280 px the slide is only about 400 px wide.
-3. **Run one hybrid query** that merges three rankings with RRF:
+3. **Try the pixel fingerprint first.** Shrink the prepared image to 32×18 grey pixels, subtract the mean and scale to unit length: 576 numbers. Search them with a plain kNN on `fp` in the side index `kubecon-details`, which holds the same fingerprint for every still under the same ids (`ingest/details.py`). It takes about 0.1 s and no inference call.
+   - **Why it works:** once the slide is cut out and flattened, the photo and the still are the same picture, pixel for pixel. That survives a small, washed-out projection whose text is too blurred to OCR.
+   - **When it's sure** (cosine at least 0.8, and at least 0.03 ahead of the best still from any other talk), return its answer and skip step 4. On simulated photos it was right 108 times out of 111 at that bar.
+   - **Otherwise** keep its hits as one more ranking for step 5, unless the best cosine is under 0.7, which is noise.
+4. **Run one hybrid query** that merges three rankings with RRF:
 
 ```json
 POST kubecon-moments/_search
@@ -72,8 +76,8 @@ POST kubecon-moments/_search
 }
 ```
 
-4. **Group the hits by `talk_id` in code.** Semantic fields don't support aggregations. Rank talks by their best single hit, then by the sum of their best three. Don't sum every hit: RRF scores are nearly flat, so a sum mostly counts hits, and ten weak hits beat one still that came first on every leg. The best talk's first hit is the moment to show, and its `url` opens YouTube at that second. Show the top three talks: the right one is in the top three far more often than it is first.
-5. **Survive a throttled inference service.** The image search and the text-to-image search each need an embedding from Elastic's inference service, which answers HTTP 429 over its rate limit. `es()` retries a 429 twice, a second or two apart. If it still fails, `lookup()` runs the keyword search alone, which needs no inference, and returns `"degraded": true`. Tell the user the match is less certain.
+5. **Merge and group in code.** Merge the hybrid hits and the fingerprint hits by rank (RRF, k = 60); they come from two indices. Then group by `talk_id`: semantic fields don't support aggregations. Rank talks by their best single hit, then by the sum of their best three. Don't sum every hit: RRF scores are nearly flat, so a sum mostly counts hits, and ten weak hits beat one still that came first on every leg. The best talk's first hit is the moment to show, and its `url` opens YouTube at that second. Show the top three talks: the right one is in the top three far more often than it is first.
+6. **Survive a throttled inference service.** The image search and the text-to-image search each need an embedding from Elastic's inference service, which answers HTTP 429 over its rate limit. `es()` retries a 429 once. If it still fails, `lookup()` uses the keyword search and the fingerprint, which need no inference, and returns `"degraded": true`. A 429 takes about 4 s to come back, so three tries made a throttled lookup take 16 s.
 
 Things that bit us while testing:
 - **`rank_window_size` must be at least `size`.** It defaults to 10, so `size: 50` without it returns HTTP 400.
