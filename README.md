@@ -44,7 +44,8 @@ Are we using it, what for, and where do you go to see it?
 - **Where to look:** [app.dash0.com](https://app.dash0.com) > Dashboards > *SlideKick: Four Golden Signals*, which has sections for the app, ingest Jobs, and ingest pipeline. Region `us-west-2`, dataset `default`.
 - **Access:** the API token is in Secret `dash0-system/dash0-authorization-secret`. The steps for reading it safely are under [Observability (Dash0)](#observability-dash0).
 - **Ingest runs:** the first run (the POC, about 11:20 MT) predates the ingest telemetry, so the dashboard's "ingest: pipeline" panels are empty for it. That's expected. The V2 run is the measured one.
-- **Not yet:** a synthetic check on `/healthz`, an SLO, browser monitoring, and an Agent0 investigation.
+- **Also in Dash0:** synthetic check `slidekick-healthz` and SLO `slidekick-availability` (Dash0 > Synthetic checks, Dash0 > SLOs).
+- **Not yet:** browser monitoring, and an Agent0 investigation. See the [checklist](#demo-ready-checklist).
 
 ### Radar: Kubernetes UI and AI SRE
 
@@ -110,15 +111,15 @@ Judged on: depth of instrumentation (traces, logs, metrics, real-user monitoring
 
 - [x] Operator on GKE; `slidekick` and `ingest` monitored; app traces flowing (see [Observability (Dash0)](#observability-dash0))
 - [x] Metrics: Kubernetes CPU, memory and Jobs, plus request rate, errors and latency from spans
-- [ ] Logs: confirm pod logs from `slidekick` and `ingest` show up in Dash0. Owner: Joel.
+- [x] Logs: pod logs from both namespaces arrive in Dash0 (1:30 PM check: 4,437 records an hour from `slidekick`, 2,068 from `ingest`)
 - [ ] Ingest telemetry: the V2 run fills the dashboard's "ingest: pipeline" section. Owner: whoever runs V2.
 - [ ] Real-user monitoring: Dash0's web SDK in `app/templates/base.html`, with `https://ingress.us-west-2.aws.dash0.com` in the CSP `connect-src`. Owner: team.
 - [ ] The match confidence recorded on the lookup span, once `/api/lookup` is real. Owner: whoever wires the lookup.
 - [ ] Observability in the product, for example the lookup's latency or trace ID on the results page. Owner: team.
 - [ ] **Agent0 or the Dash0 MCP finds and fixes something real**, linked here. Owner: Joel.
 - [x] *(bonus)* Dashboard *SlideKick: Four Golden Signals*: app, ingest Jobs, ingest pipeline
-- [ ] *(bonus)* SLO on `/api/lookup` p95 latency, or on availability. Owner: Joel.
-- [ ] *(bonus)* Synthetic check on `https://slidekick.us/healthz`. Owner: Joel.
+- [x] *(bonus)* SLO `slidekick-availability`: 99% of synthetic `/healthz` checks pass, over a rolling 28 days. A latency SLO on `/api/lookup` can follow once the lookup is real.
+- [x] *(bonus)* Synthetic check `slidekick-healthz`: GET `https://slidekick.us/healthz` every minute from Oregon and N. Virginia. It asserts status 200, body `ok`, and a TLS certificate valid for more than 7 days; it's degraded above 1 s. It sends tracing headers, so each probe also shows up as a trace in our app.
 
 ### Radar: AI SRE
 
