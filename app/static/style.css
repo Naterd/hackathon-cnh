@@ -172,6 +172,13 @@ main { position: relative; flex: 1; min-height: 0; }
 .hero-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .hero.has-slide .hero-slide { visibility: visible; animation: snapin 550ms cubic-bezier(0.2, 0.9, 0.2, 1); }
 .hero.has-slide .hero-photo { inset: auto 10px 10px auto; width: 84px; height: 63px; object-fit: cover; border: 2px solid var(--color-bg); box-shadow: var(--shadow-lg); }
+/* Tap the inset to swap: your photo fills the frame and the slide becomes the inset, so you can flick between them. */
+.hero.has-slide.swapped .hero-photo { inset: 0; width: 100%; height: 100%; object-fit: contain; border: 0; box-shadow: none; }
+.hero.has-slide.swapped .hero-slide { position: absolute; z-index: 1; inset: auto 10px 10px auto; width: 84px; height: 63px; object-fit: cover; border: 2px solid var(--color-bg); box-shadow: var(--shadow-lg); }
+.hero-swap { display: none; position: absolute; z-index: 2; inset: auto 4px 4px auto; width: 96px; height: 75px; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.hero.has-slide .hero-swap { display: block; }
+.hero.swapped .hero-swap { cursor: zoom-out; }
+.hero-swap:focus-visible { outline: 2px solid var(--color-accent-300); outline-offset: -4px; }
 #match-meta { margin-top: 22px; }
 .match-title { margin: 8px 0 18px; font-size: 28px; line-height: 1.08; }
 .said { margin: 0 0 18px; padding: 10px 14px; border-left: 3px solid var(--color-accent); background: var(--color-neutral-200); }
