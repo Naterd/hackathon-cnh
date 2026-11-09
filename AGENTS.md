@@ -70,9 +70,10 @@ Judged: Gitar's PR reviews, review instructions in `.gitar/review/`, repository 
 
 Judged: storing data, Jina embeddings through Elastic's inference service, keyword, vector, time-series and geo queries, aggregations and dashboards, and Elastic Workflows or Agent Builder, including MCP.
 
+- **Before writing any search code, read `docs/search.md`.** It covers the index (alias `kubecon-moments`, 12,146 slide stills and 370 talks), every field, the lookup query and the gotchas we hit. `docs/search_example.py` is working reference code, and `docs/test-photos/` has photos with known answers. The app reads `ELASTIC_URL` and `ELASTIC_ES_API_KEY` from Secret `slidekick/app-credentials`.
 - Serverless project `slidekick` (vector-optimized, 9.7). Embeddings come from Elastic's inference service (`.jina-embeddings-v5-omni-small`); don't add another embedding model.
 - `slide` (a base64 image) and `said` (captions) are `semantic` fields. Exclude both from `_source` in every search, and never highlight `slide`. Each image is a data URL of at most 1 MB decoded, so resize first.
-- A lookup is one hybrid query: RRF over image kNN on `slide`, OCR keyword matching and text-to-image matching. Filters go inside the `knn` clause. Aggregations, sorting and ES|QL don't work on semantic fields, so group results by talk in the API.
+- A lookup is one hybrid query: RRF over image kNN on `slide`, OCR keyword matching and text-to-image matching. Set `rank_window_size` to at least `size`. Leave the lookup's kNN leg unfiltered: a filter there made it 3–6× slower. If another query does need a filter on kNN, it goes inside the `knn` clause. Aggregations, sorting and ES|QL don't work on semantic fields, so group results by talk in the API.
 - Index mapping changes go through a PR. Bulk returns HTTP 200 even when items fail: check each item, and retry 429s.
 - Elastic's agent skills: https://github.com/elastic/agent-skills.
 
