@@ -25,7 +25,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from index import ES, log
+from index import ES, log, send as bulk_send
 
 THUMB_PX, THUMB_QUALITY = 320, 70
 LOGO = re.compile(r"kube|cloudnat|nativecon|america|20\d\d", re.I)  # the event logo in a slide's top corner
@@ -90,7 +90,7 @@ def thumbs(a):
     vid = a.talk or Path(a.talks).read_text().split()[int(os.environ["JOB_COMPLETION_INDEX"])]
     d = Path(a.derived) / vid
     out = d / "details.json"
-    if out.exists() and not a.force:
+    if out.exists() and not a.force and out.stat().st_mtime >= (d / "segments.json").stat().st_mtime:
         log(f"{vid}: done already")
         return
     segs = json.loads((d / "segments.json").read_text())
@@ -115,11 +115,17 @@ def fingerprint(path):
 
 def talk_frames(talk_dir, event):
     vid = talk_dir.name
+    if (talk_dir / "details.json").stat().st_mtime < (talk_dir / "segments.json").stat().st_mtime:
+        log(f"{vid}: details.json predates the last extract, stills skipped; run.sh thumbs remakes it")
+        return []
     talk = json.loads((talk_dir / "talk.json").read_text())
     segs = {s["n"]: s for s in json.loads((talk_dir / "segments.json").read_text())}
     docs = []
     for s in json.loads((talk_dir / "details.json").read_text())["stills"]:
-        seg = segs[s["n"]]
+        seg = segs.get(s["n"])
+        if not seg:  # details.json predates a re-extract: run.sh thumbs remakes it
+            log(f"{vid}: still {s['n']} is no longer in segments.json, skipped")
+            continue
         doc = {"source": "frame", "event": event, "talk_id": vid, **s, "end_sec": seg["end"],
                "url": f"https://youtu.be/{vid}?t={int(seg['start'])}",  # as index.py builds it
                "title": talk["title"], "speakers_text": talk["speakers_text"]}
@@ -142,16 +148,9 @@ def load(a):
 
     def send(docs):
         nonlocal loaded, failed
-        lines = []
-        for _id, doc in docs:
-            lines += [json.dumps({"index": {"_index": a.index, "_id": _id}}), json.dumps(doc)]
-        status, r = es.call("POST", "/_bulk", ("\n".join(lines) + "\n").encode(), ndjson=True)
-        if status != 200:
-            sys.exit(f"bulk: HTTP {status} {str(r)[:300]}")
-        errs = [it["index"]["error"] for it in r["items"] if "error" in it["index"]]
-        loaded, failed = loaded + len(docs) - len(errs), failed + len(errs)
-        if errs:
-            log(f"bulk errors, first: {str(errs[0])[:300]}")
+        if docs:
+            ok, bad = bulk_send(es, a.index, docs)  # retries throttled items, counts each one
+            loaded, failed = loaded + ok, failed + bad
 
     send([(f"{vid}-talk", {"source": "talk", "event": a.event, "talk_id": vid, **s}) for vid, s in sched.items()])
     talks = sorted(f.parent for f in Path(a.derived).glob("*/details.json"))

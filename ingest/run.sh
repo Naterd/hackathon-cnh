@@ -132,10 +132,9 @@ case $cmd in
     [[ $cmd == thumbs ]] && count=$(grep -c . <<<"$ids") && (( PARALLEL > count )) && PARALLEL=$count
     [[ $cmd == details ]] && PARALLEL=1
     ship_code
-    if [[ $cmd == thumbs ]] || ! kubectl -n $NS get configmap ingest-talks >/dev/null 2>&1; then
-      kubectl -n $NS create configmap ingest-talks --from-literal=talks.txt="$ids" \
-        --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-    fi
+    # its own talk list: a running extract Job reads ingest-talks by completion index
+    kubectl -n $NS create configmap "ingest-talks-$cmd" --from-literal=talks.txt="$ids" \
+      --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     kubectl -n $NS delete job "ingest-$cmd" --ignore-not-found >/dev/null
     render k8s/details-job.yaml STEP="$cmd" COUNT="$count" PARALLEL="$PARALLEL" IMAGE="$IMAGE" EVENT="$EVENT" \
       DERIVED="$DERIVED" BUCKET="$CNH_BUCKET" FORCE="$FORCE" INDEX="$INDEX" | kubectl apply -f -

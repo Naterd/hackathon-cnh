@@ -50,4 +50,4 @@ spec:
         - name: code
           configMap: {name: ingest-code}
         - name: talks
-          configMap: {name: ingest-talks}
+          configMap: {name: ingest-talks-__STEP__}
