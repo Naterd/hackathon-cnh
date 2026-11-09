@@ -8,6 +8,7 @@ on:
     paths:
       - ingest/**
       - ci/**
+      - docs/search_example.py    # the lookup the accuracy gate measures
       - .github/workflows/ingest-ci.yaml
   workflow_dispatch:
 permissions:

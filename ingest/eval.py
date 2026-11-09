@@ -1,8 +1,8 @@
 """Random accuracy test: realistic phone photos of random moments, run through the app's lookup.
 
 Picks random moments from the extracted talks (derived/<version>), renders each one as a phone
-photo (perspective, rotation, glare, blur, noise, JPEG quality), runs the hybrid lookup from
-docs/search.md and scores it:
+photo (perspective, rotation, glare, blur, noise, JPEG quality), runs the app's lookup on it
+(docs/search_example.py, which run.sh ships alongside) and scores it:
   talk@1, talk@3  the right talk is first, or in the top 3
   moment          the top hit is the slide on screen at that moment, so its link lands right
 Two photo modes:
@@ -12,7 +12,6 @@ Two photo modes:
   python eval.py --videos /bucket/kubecon-na-2024 --derived /bucket/derived/v1/kubecon-na-2024 --n 200
 """
 import argparse
-import base64
 import concurrent.futures as cf
 import io
 import json
@@ -20,18 +19,16 @@ import math
 import random
 import statistics
 import subprocess
-import threading
 import time
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
+import search_example
 from extract import CROP_BOX
-from index import ES
 
 INDEX = "kubecon-moments"
-_local = threading.local()
 
 
 def frame_at(video, t, crop=None):
@@ -84,47 +81,6 @@ def phone_photo(img, rng):
     return buf.getvalue()
 
 
-def ocr(jpeg):
-    if not hasattr(_local, "ocr"):
-        from rapidocr_onnxruntime import RapidOCR
-        _local.ocr = RapidOCR()
-    res, _ = _local.ocr(jpeg)
-    return " ".join(r[1] for r in (res or []))
-
-
-def lookup(es, index, jpeg):
-    """The lookup from docs/search.md: prepare the photo, OCR it, one RRF query, group by talk."""
-    im = Image.open(io.BytesIO(jpeg)).convert("RGB")
-    im.thumbnail((1280, 1280))
-    buf = io.BytesIO()
-    im.save(buf, "JPEG", quality=85)
-    image = {"type": "image", "format": "base64",
-             "value": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()}
-    text = ocr(buf.getvalue())
-    frames = [{"term": {"source": "frame"}}]
-    retrievers = [{"standard": {"query": {"knn": {"field": "slide", "k": 20, "num_candidates": 100,
-                                                  "query_vector_builder": {"embedding": {"input": image}}}}}}]
-    if text:
-        retrievers += [
-            {"standard": {"query": {"bool": {"filter": frames, "must": {
-                "multi_match": {"query": text, "fields": ["ocr_text^2", "said_text"]}}}}}},
-            {"standard": {"query": {"bool": {"filter": frames, "must": {"match": {"slide": text}}}}}}]
-    body = {"size": 50, "_source": {"includes": ["talk_id", "start_sec", "end_sec"]},
-            "retriever": {"rrf": {"retrievers": retrievers, "rank_window_size": 100}}
-            if len(retrievers) > 1 else retrievers[0]}
-    t0 = time.time()
-    status, r = es.call("POST", f"/{index}/_search", body)
-    took = time.time() - t0
-    if status != 200:
-        raise RuntimeError(f"search HTTP {status}: {str(r)[:200]}")
-    talks = {}
-    for h in r["hits"]["hits"]:
-        s = h["_source"]
-        t = talks.setdefault(s["talk_id"], {"talk_id": s["talk_id"], "score": 0.0, "first": s})
-        t["score"] += h["_score"]
-    return sorted(talks.values(), key=lambda t: t["score"], reverse=True), text, took
-
-
 def sample(derived, n, rng, modes):
     talks = []
     for d in sorted(p.parent for p in Path(derived).glob("*/segments.json")):
@@ -138,20 +94,20 @@ def sample(derived, n, rng, modes):
                "t": round(rng.uniform(s["start"] + 1, s["end"] - 1), 2), "seg": [s["start"], s["end"]]}
 
 
-def run_one(es, index, videos, case, seed, save_dir):
+def run_one(index, videos, case, seed, save_dir):
     rng = random.Random(seed * 100003 + case["i"])
     crop = CROP_BOX if case["mode"] == "slide" and case["layout"] == "box" else None
     jpeg = phone_photo(frame_at(Path(videos) / case["talk_id"] / "video.mp4", case["t"], crop), rng)
     t0 = time.time()
-    ranked, text, took = lookup(es, index, jpeg)
-    ids = [t["talk_id"] for t in ranked]
-    top = ranked[0]["first"] if ranked else None
+    r = search_example.lookup(jpeg, index=index)
+    ids = [t["talk_id"] for t in r["talks"]]
+    top = r["talks"][0]["moments"][0] if r["talks"] else None
     result = {**case, "talk1": ids[:1] == [case["talk_id"]], "talk3": case["talk_id"] in ids[:3],
               "moment": bool(top) and ids[0] == case["talk_id"] and top["start_sec"] <= case["t"] < top["end_sec"],
               # an adjacent slide still lands the viewer close: within 30 s either side of that slide
               "moment_near": bool(top) and ids[0] == case["talk_id"]
               and top["start_sec"] - 30 <= case["t"] < top["end_sec"] + 30,
-              "got": ids[:3], "ocr_words": len(text.split()), "search_s": round(took, 2),
+              "got": ids[:3], "found": r["found"], "ocr_words": len(r["ocr_text"].split()),
               "total_s": round(time.time() - t0, 2)}
     if save_dir and not result["talk1"]:
         Path(save_dir).mkdir(parents=True, exist_ok=True)
@@ -170,7 +126,7 @@ def summarize(results):
                 "p50_s": round(statistics.median(lat), 2),
                 "p95_s": round(lat[min(len(lat) - 1, math.ceil(0.95 * len(lat)) - 1)], 2)}
     out = {"all": block(results)}
-    for key in ("mode", "layout"):
+    for key in ("mode", "layout", "found"):
         for v in sorted({r[key] for r in results}):
             out[f"{key}={v}"] = block([r for r in results if r[key] == v])
     return out
@@ -189,11 +145,11 @@ def main():
     ap.add_argument("--min-talk1", type=float, help="exit 1 if talk@1 is below this, for CI")
     a = ap.parse_args()
 
-    es, rng = ES(), random.Random(a.seed)
+    rng = random.Random(a.seed)
     cases = list(sample(a.derived, a.n, rng, a.modes.split(",")))
     results, errors = [], 0
     with cf.ThreadPoolExecutor(a.workers) as ex:
-        for f in cf.as_completed([ex.submit(run_one, es, a.index, a.videos, c, a.seed, a.save_failures)
+        for f in cf.as_completed([ex.submit(run_one, a.index, a.videos, c, a.seed, a.save_failures)
                                   for c in cases]):
             try:
                 results.append(f.result())
@@ -204,7 +160,7 @@ def main():
     print(json.dumps({"index": a.index, "seed": a.seed, "errors": errors, **summary}, indent=1))
     for r in [r for r in results if not r["talk1"]][:15]:
         print(f"miss: {r['talk_id']} @{r['t']}s mode={r['mode']} layout={r['layout']} "
-              f"ocr_words={r['ocr_words']} got={r['got']}")
+              f"found={r['found']} ocr_words={r['ocr_words']} got={r['got']}")
     if a.min_talk1 is not None:
         talk1 = sum(r["talk1"] for r in results) / len(cases)  # a photo that errored counts as a miss
         if talk1 < a.min_talk1 or errors > 0.1 * len(cases):

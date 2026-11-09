@@ -8,6 +8,10 @@ metadata:
   labels: {app: ingest, step: index, purpose: cnh-hackathon, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
 spec:
   backoffLimit: 1
+  podFailurePolicy:
+    rules:
+      - action: Ignore                 # spot preemption: rerun without counting a failure
+        onPodConditions: [{type: DisruptionTarget}]
   ttlSecondsAfterFinished: 86400
   template:
     metadata:

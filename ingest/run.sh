@@ -66,7 +66,7 @@ render() {  # template file, then KEY=value pairs
 
 ship_code() {
   kubectl -n $NS create configmap "ingest-code" --from-file=extract.py --from-file=index.py \
-    --from-file=telemetry.py --from-file=eval.py --from-file=requirements.txt \
+    --from-file=telemetry.py --from-file=eval.py --from-file=../docs/search_example.py --from-file=requirements.txt \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 

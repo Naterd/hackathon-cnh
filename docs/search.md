@@ -45,8 +45,12 @@ A real still, with `slide` and `said` left out:
 
 ## Photo lookup
 
-1. **Prepare the photo.** Apply the EXIF orientation, shrink to at most 1280 px, and encode a JPEG under 900 KB; the field's limit is 1 MB of decoded bytes. Send it as an image object, not a bare data URL: `{"type": "image", "format": "base64", "value": "data:image/jpeg;base64,…"}`.
-2. **OCR it** with the same engine as ingest (RapidOCR, `rapidocr-onnxruntime==1.4.4`), so merged words match the same way on both sides. Create the engine once at startup: 0.5 s per photo warm, about 1 s cold.
+1. **Find the screen and flatten it.** Apply the EXIF orientation and shrink to at most 1600 px. Find the screen with OpenCV, as the innermost large four-sided outline, and warp it flat to 1280×720. If there's no screen, use the photo as it is.
+2. **OCR it** with the same engine as ingest (RapidOCR, `rapidocr-onnxruntime==1.4.4`), so merged words match the same way on both sides. Create the engine once per worker thread: 0.5 s per photo warm, about 1 s cold.
+   - **A whole recording:** most 2024 recordings show the slide in a box on the left, with the speaker and the KubeCon logo on the right, and the index holds only the box for those talks. If OCR finds the logo in the right-hand panel, crop to the slide box and keep only the words inside it. The logo text alone matches every keynote still, which is what sank screen photos in the first test (`docs/results.md`).
+   - **Encode the result** as a JPEG under 900 KB; the field's limit is 1 MB of decoded bytes. Send it as an image object, not a bare data URL: `{"type": "image", "format": "base64", "value": "data:image/jpeg;base64,…"}`.
+
+   `prepare()` in `docs/search_example.py` does all of this. For the demo, play the talk full screen: the crop assumes the screen shows only the video.
 3. **Run one hybrid query** that merges three rankings with RRF:
 
 ```json
@@ -117,4 +121,4 @@ These wait for the v2 ingest, which runs once the frontend settles what it needs
 
 ## For the app image
 
-`pillow` and `rapidocr-onnxruntime==1.4.4`, which pulls in `onnxruntime` and `opencv-python`. Apt packages `libgl1` and `libglib2.0-0` are needed for OpenCV. Don't add any `opentelemetry-*` package: the Dash0 operator injects the SDK and turns itself off if it finds one.
+`pillow` and `rapidocr-onnxruntime==1.4.4`, which pulls in `onnxruntime`, `numpy` and `opencv-python`; the screen finder uses OpenCV too. Apt packages `libgl1` and `libglib2.0-0` are needed for OpenCV. Don't add any `opentelemetry-*` package: the Dash0 operator injects the SDK and turns itself off if it finds one.
