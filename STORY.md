@@ -21,7 +21,7 @@ Checks: https://app.radarhq.io/checks?scope=k8l3A-86hTM
 
 ## Investigation
 
-Nov 9, 12:35 MT. A Radar Issue flagged Job `ingest/ingest-extract-ci` (a 4-talk Indexed Job run) as **Unschedulable**: "Insufficient cpu, node affinity/selector mismatch". We started a Radar AI investigation on the Job: https://app.radarhq.io/c/k8l3A-86hTM/investigations/chat_nnIgqoMG-hY1WF54?org=org_LAtK4qe79DlO
+Nov 9, 12:32 MT: a Radar Issue flagged Job `ingest/ingest-extract-ci` (a 4-talk Indexed Job run) as **Unschedulable**: "Insufficient cpu, node affinity/selector mismatch". At 12:35 MT we started a Radar AI investigation on the Job: https://app.radarhq.io/c/k8l3A-86hTM/investigations/chat_nnIgqoMG-hY1WF54?org=org_LAtK4qe79DlO
 
 **The investigation's verdict:** healthy, certainty "established", confidence 0.9. 3 of 4 indexes were done, the 4th was running, and there were "no warning events". The Job did complete, 4 of 4 at 12:37:12 MT.
 
@@ -32,7 +32,7 @@ Nov 9, 12:35 MT. A Radar Issue flagged Job `ingest/ingest-extract-ci` (a 4-talk 
 - 19:33:22 `FailedMount` ×2: the GCS FUSE CSI driver wasn't registered yet on the new node.
 - 19:34:08 the container starts, after a 16 s pull of the 368 MB ingest image.
 
-**What we learned:** each new spot node costs about 95 s before a pod on it runs: scale-up, then CSI driver registration, then image pulls. At 2 CPU per pod, an e2-standard-8 fits 3 pods. **Decision for the V2 run:** to be made. Either right-size the CPU request so more pods fit per node, or pre-scale the spot pool before fanning out.
+**What we learned:** each new spot node costs about 95 s before a pod on it runs: scale-up, then CSI driver registration, then image pulls. At 2 CPU per pod, an e2-standard-8 fits 3 pods. **Decision for the V2 run:** pre-scale the ingest spot pool before fanning out (see the follow-up below).
 
 ### Follow-up: steering the investigation (12:42 MT)
 

@@ -43,6 +43,7 @@ Are we using it, what for, and where do you go to see it?
 - **How it's wired:** the Dash0 operator in namespace `dash0-system` injects OpenTelemetry into pods in `slidekick` and `ingest`. The app and the ingest Jobs export traces, metrics and logs with no SDK setup in our code. `ingest/telemetry.py` adds per-talk and per-phase spans, plus the stills and documents counters.
 - **Where to look:** [app.dash0.com](https://app.dash0.com) > Dashboards > *SlideKick: Four Golden Signals*, which has sections for the app, ingest Jobs, and ingest pipeline. Region `us-west-2`, dataset `default`.
 - **Access:** the API token is in Secret `dash0-system/dash0-authorization-secret`. The steps for reading it safely are under [Observability (Dash0)](#observability-dash0).
+- **Ingest runs:** the first run (the POC, about 11:20 MT) predates the ingest telemetry, so the dashboard's "ingest: pipeline" panels are empty for it. That's expected. The V2 run is the measured one.
 - **Not yet:** a synthetic check on `/healthz`, an SLO, browser monitoring, and an Agent0 investigation.
 
 ### Radar: Kubernetes UI and AI SRE
@@ -79,6 +80,7 @@ Are we using it, what for, and where do you go to see it?
   )
   curl -s -H @"$HOME/.es-auth-header" "$(cat ~/.es-url)/kubecon-moments/_count"
   ```
+- **How the app queries it:** [`docs/search.md`](docs/search.md), with a runnable example in `docs/search_example.py`.
 - **Rules that bite:** exclude `slide` and `said` from `_source` in every search. Images must be at most 1 MB decoded. Filters go inside the `knn` clause. Bulk returns 200 even when items fail. See `AGENTS.md`.
 
 ## How it works
