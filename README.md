@@ -61,7 +61,7 @@ Are we using it, what for, and where do you go to see it?
    - 48 s unschedulable: the one spot node fits only three 2-CPU pods, so the autoscaler added a node (1 → 2).
    - Then a `FailedMount` because the new node's GCS FUSE CSI driver wasn't registered yet.
    - Then three cold image pulls, including the 368 MB ingest image.
-4. **What we decided.** The full V2 run (about 370 talks) would pay that ~95 s for **every** new spot node. So before V2 we **pre-scale the ingest spot pool**, so the nodes are up and CSI-ready before the Job fans out. We checked Radar's second suggestion, GKE Image Streaming, and found it doesn't apply to us: it's off on the pool, and it only works for images in Artifact Registry, while ours come from GHCR.
+4. **What we decided.** The full V2 run (about 370 talks) pays that ~95 s once for each new spot node. We weighed pre-scaling the pool and decided **not to**: a minute and a half per node is small next to the run, and pre-scaling means changing and then undoing the node pool on a shared cluster. We checked Radar's second suggestion, GKE Image Streaming, and found it doesn't apply to us: it's off on the pool, and it only works for images in Artifact Registry, while ours come from GHCR.
 5. **Checks, before and after.** Radar Checks reported 10 medium findings in our namespaces (see [`STORY.md`](STORY.md)). We fixed the ones that apply in a reviewed PR: a PodDisruptionBudget, no auto-mounted service-account token, and a soft topology spread for the app. `podHARisk` remains while the default pool has one node; the soft spread kicks in when a second node appears.
 
 ### Elasticsearch: document store and search
@@ -130,7 +130,7 @@ Judged on: running on Kubernetes with Radar connected; Radar's UI and MCP used t
 - [x] Checks "before" recorded in [`STORY.md`](STORY.md)
 - [x] Checks "after": `slidekick` went from 6 to 3 findings after [#13](https://github.com/Naterd/hackathon-cnh/pull/13) ([`STORY.md`](STORY.md#after))
 - [x] One deploy verified **through Radar's MCP**: Argo CD's sync state, the rollout with `wait_for`, and the live version ([`STORY.md`](STORY.md#after)). Radar can't trigger a sync, because our Radar user lacks `patch` on Argo CD Applications.
-- [ ] Act on the investigation's decision: pre-scale the ingest spot pool before V2. Owner: whoever runs V2.
+- [x] A decision Radar informed: each new spot node costs about 95 s, and we **accept that cold start for V2** instead of pre-scaling the pool. It's small next to the run time, and it avoids changing and undoing the node pool ([`STORY.md`](STORY.md#follow-up-steering-the-investigation-1242-mt))
 - [ ] *(bonus)* Fix the high Checks finding on the ARC controller (`arc-systems`). Owner: Nate.
 - [ ] Draft the 5:30 story from Radar's timeline with the `demo-story` skill, at about 5:00. Owner: Joel.
 

@@ -32,11 +32,11 @@ Nov 9, 12:32 MT: a Radar Issue flagged Job `ingest/ingest-extract-ci` (a 4-talk 
 - 19:33:22 `FailedMount` ×2: the GCS FUSE CSI driver wasn't registered yet on the new node.
 - 19:34:08 the container starts, after a 16 s pull of the 368 MB ingest image.
 
-**What we learned:** each new spot node costs about 95 s before a pod on it runs: scale-up, then CSI driver registration, then image pulls. At 2 CPU per pod, an e2-standard-8 fits 3 pods. **Decision for the V2 run:** pre-scale the ingest spot pool before fanning out (see the follow-up below).
+**What we learned:** each new spot node costs about 95 s before a pod on it runs: scale-up, then CSI driver registration, then image pulls. At 2 CPU per pod, an e2-standard-8 fits 3 pods. **Decision for the V2 run:** accept the cold start; no pre-scaling (see the follow-up below).
 
 ### Follow-up: steering the investigation (12:42 MT)
 
-We asked it to check the pods' events, not only the Job's. It revised its finding: "A new spot node's boot, storage-driver registration, and image pulls delayed pod index 3 by about 95 seconds", certainty "likely", confidence 0.85. That matches the pod events above. Its fix was to pre-scale the ingest pool and turn on GKE Image Streaming. **We checked:** Image Streaming is off on the `ingest` pool, and it only works for Artifact Registry images, while ours come from GHCR. So the change we're keeping is pre-scaling the spot pool before V2.
+We asked it to check the pods' events, not only the Job's. It revised its finding: "A new spot node's boot, storage-driver registration, and image pulls delayed pod index 3 by about 95 seconds", certainty "likely", confidence 0.85. That matches the pod events above. Its fix was to pre-scale the ingest pool and turn on GKE Image Streaming. **We checked:** Image Streaming is off on the `ingest` pool, and it only works for Artifact Registry images, while ours come from GHCR. We also weighed pre-scaling the spot pool, and **decided to accept the ~95 s cold start per new node**: it's small next to the run, and pre-scaling means changing and then undoing the node pool on a shared cluster.
 
 ## After
 
