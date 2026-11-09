@@ -1,0 +1,39 @@
+# One indexer pod that loads the extracted talks into Elasticsearch. Rendered by ingest/run.sh.
+# index.py uses only the standard library, so the stock Python image is enough.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ingest-index
+  namespace: ingest
+  labels: {app: ingest, step: index, purpose: cnh-hackathon, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app: ingest, step: index, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
+      annotations: {gke-gcsfuse/volumes: "true"}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: downloader
+      nodeSelector: {workload: ingest}
+      tolerations: [{key: workload, operator: Equal, value: ingest, effect: NoSchedule}]
+      containers:
+        - name: index
+          image: python:3.12-slim
+          command: ["sh", "-c", "exec python -u /code/index.py --src /bucket/derived/__DERIVED__/__EVENT__ --event __EVENT__ --index __INDEX__ __ARGS__"]
+          envFrom: [{secretRef: {name: elastic}}]
+          resources:
+            requests: {cpu: "2", memory: 2Gi}
+            limits: {cpu: "2", memory: 4Gi}
+          volumeMounts:
+            - {name: bucket, mountPath: /bucket, readOnly: true}
+            - {name: code, mountPath: /code}
+      volumes:
+        - name: bucket
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            readOnly: true
+            volumeAttributes: {bucketName: __BUCKET__, mountOptions: "implicit-dirs"}
+        - name: code
+          configMap: {name: ingest-code}
