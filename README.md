@@ -100,8 +100,8 @@ Judged on: features landing through PRs Gitar reviewed; review instructions **an
 - [x] Review instructions in [`.gitar/review/main.md`](.gitar/review/main.md)
 - [x] Real findings acted on: [#4](https://github.com/Naterd/hackathon-cnh/pull/4) → [#5](https://github.com/Naterd/hackathon-cnh/pull/5) (duplicate Argo CD Application), [#9](https://github.com/Naterd/hackathon-cnh/pull/9) (key-file permissions), [#13](https://github.com/Naterd/hackathon-cnh/pull/13) (story timestamps)
 - [x] PR CI for ingest: `ingest-ci` on our GKE runners ([#11](https://github.com/Naterd/hackathon-cnh/pull/11))
-- [ ] Repository rules in `.gitar/rules/` (`deploy-changes`, `index-mapping`). Owner: Joel. Branch `gitar-rules-app-ci`.
-- [ ] PR CI for the app: `app-ci` (smoke test plus image build). Owner: Joel. Same branch.
+- [x] Repository rules in [`.gitar/rules/`](.gitar/rules/): `deploy-changes` and `index-mapping` ([#15](https://github.com/Naterd/hackathon-cnh/pull/15))
+- [x] PR CI for the app: `app-ci` (smoke test plus image build) on GitHub-hosted runners ([#15](https://github.com/Naterd/hackathon-cnh/pull/15))
 - [ ] Auto-apply turned on for each feature PR: comment `gitar auto-apply:on` on it. Owner: whoever opens the PR.
 - [ ] **One real CI failure that Gitar diagnosed and fixed**, with the PR linked here. Owner: team. Don't break CI on purpose; it'll happen.
 
