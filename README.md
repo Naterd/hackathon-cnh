@@ -155,8 +155,8 @@ Judged on: Elasticsearch as the core data layer; smart search (keyword, semantic
 - [x] Serverless project `slidekick`; alias `kubecon-moments` → `kubecon-moments-v1`, 39,602 documents; semantic `slide`, `said` and `abstract` fields with Jina
 - [x] Hybrid RRF lookup documented and runnable: [`docs/search.md`](docs/search.md), `docs/search_example.py`
 - [x] Accuracy measured with `ingest/eval.py`; results in [`docs/results.md`](docs/results.md)
-- [ ] **`/api/lookup` runs the real hybrid query** (it's a stub today). This is the "core data layer" criterion. Owner: team.
-- [ ] The results page shows real talks and timestamps from Elasticsearch. Owner: team.
+- [x] **`/api/lookup` runs the real hybrid query** ([#16](https://github.com/Naterd/hackathon-cnh/pull/16), [#19](https://github.com/Naterd/hackathon-cnh/pull/19)). Live test at 2:56 PM: `docs/test-photos/appset-603s.jpg` returned *Mastering ApplicationSet: Advanced Argo CD Automation* as the top talk, with moments at 549 s, 269 s and 615 s
+- [x] Results come back as real talks and `youtu.be/…?t=` moment links from Elasticsearch. Dash0 traced the lookup at 6.8 s, of which about 1.6 s is the three Elasticsearch calls; the rest is OCR and image work in the pod.
 - [ ] *(bonus)* This week's schedule and decks indexed for live mode. Owner: team.
 
 ## How it works
