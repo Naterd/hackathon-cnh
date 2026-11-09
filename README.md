@@ -102,7 +102,7 @@ Judged on: features landing through PRs Gitar reviewed; review instructions **an
 - [x] PR CI for ingest: `ingest-ci` on our GKE runners ([#11](https://github.com/Naterd/hackathon-cnh/pull/11))
 - [x] Repository rules in [`.gitar/rules/`](.gitar/rules/): `deploy-changes` and `index-mapping` ([#15](https://github.com/Naterd/hackathon-cnh/pull/15))
 - [x] PR CI for the app: `app-ci` (smoke test plus image build) on GitHub-hosted runners ([#15](https://github.com/Naterd/hackathon-cnh/pull/15))
-- [ ] Auto-apply turned on for each feature PR: comment `gitar auto-apply:on` on it. Owner: whoever opens the PR.
+- [x] Auto-apply turned on: `gitar auto-apply:on` on [#16](https://github.com/Naterd/hackathon-cnh/pull/16), and Gitar's review reports "Auto-apply is on". Keep doing it on each feature PR.
 - [ ] **One real CI failure that Gitar diagnosed and fixed**, with the PR linked here. Owner: team. Don't break CI on purpose; it'll happen.
 
 ### Dash0: Stop Flying Blind
