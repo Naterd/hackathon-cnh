@@ -155,6 +155,25 @@ Coverage: 361 of the 370 talks have Sched data, 315 of them with speakers and 20
 - Photos users upload (`source: photo`, `roll_id`, `taken_at`), so a timeline can be reopened
 - This week's 2026 sessions and decks
 
+## Using the reference lookup in the app
+
+`app/search.py` still holds a copy of the first lookup: no crop, no fingerprint, summed ranking, and an HTTP 429 from Elastic becomes an error. To switch it to `lookup()` in `docs/search_example.py`:
+
+1. **Ship two files side by side in the image:** `COPY docs/search_example.py docs/layout-kubecon-na-2024.png ./` in the `Dockerfile`. The lookup finds the layout image next to itself.
+2. **Call `search_example.lookup(photo_bytes)`** from `app/search.py`'s `lookup()`, after its `BadPhoto` and pixel-count checks. It returns `talks` (each with `talk_id`, `title`, `speakers`, `score`, `moments`), plus `found`, `degraded` and `fingerprint`. A moment has `id`, `start_sec`, `end_sec` and `url`; the slide number `n` is the last three digits of `id`.
+3. **Keep one OCR engine.** `search_example.ocr()` makes an engine per thread, about 300 MB each. The app's thread pool also serves `/api/slide`, so it grows to dozens of threads, and the pod would pass its 2Gi limit. Replace it with the app's shared engine behind its lock:
+   ```python
+   def one_ocr(img):
+       with ocr_lock:
+           result, _ = ocr(img)
+       return [(text, *np.mean(box, axis=0)) for box, text, _ in (result or [])]
+   search_example.ocr = one_ocr
+   ```
+4. **The app's key must read `kubecon-details`.** If it can't, the fingerprint leg is skipped without an error: check that a lookup's `fingerprint.cosine` isn't always 0.
+5. **Upload bigger photos:** raise the 1280 px shrink in `app/static/app.js` to 2500 px or more. The slide box is cut from the full-size photo, and at 1280 px a projected slide is about 400 px wide, too small to OCR.
+6. **Show all three talks**, and say so when `degraded` is true.
+7. **Camera rolls:** at most two lookups at a time, or Elastic's inference limit trips.
+
 ## For the app image
 
 `pillow` and `rapidocr-onnxruntime==1.4.4`, which pulls in `onnxruntime`, `numpy` and `opencv-python`; the screen finder uses OpenCV too. Apt packages `libgl1` and `libglib2.0-0` are needed for OpenCV. Don't add any `opentelemetry-*` package: the Dash0 operator injects the SDK and turns itself off if it finds one.
