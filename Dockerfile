@@ -10,6 +10,8 @@ COPY app/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
  && python -c "from rapidocr_onnxruntime import RapidOCR; RapidOCR()"
 COPY app/ .
+# The lookup, and the recording layout it finds next to itself.
+COPY docs/search_example.py docs/layout-kubecon-na-2024.png ./
 ARG APP_VERSION=dev
 ENV APP_VERSION=$APP_VERSION PYTHONUNBUFFERED=1
 USER 1000

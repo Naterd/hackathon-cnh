@@ -23,7 +23,7 @@ except ImportError:
 
 HERE = Path(__file__).parent
 
-# The browser uploads a 1280 px JPEG of about 300 KB. The cap only stops a huge upload
+# The browser uploads a 2560 px JPEG of about 1 MB. The cap only stops a huge upload
 # from filling the pod's memory.
 MAX_UPLOAD_BYTES = 10_000_000
 
@@ -141,6 +141,9 @@ async def call(fn, *args, missing=None):
         raise HTTPException(503, "Search isn't configured: set ELASTIC_URL and ELASTIC_ES_API_KEY")
     try:
         return await run_in_threadpool(fn, *args)
+    except search.Throttled:
+        log.warning("Elasticsearch kept answering 429")
+        raise HTTPException(503, "Search is busy. Try again in a moment.")
     except urllib.error.HTTPError as e:
         if missing and e.code == 404:
             raise HTTPException(404, missing)

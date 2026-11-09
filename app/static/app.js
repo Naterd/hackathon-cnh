@@ -2,8 +2,9 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
 
 const $ = (id) => document.getElementById(id);
 
-// Photos stay on this phone, in IndexedDB: {id, takenAt, blob, state: "queued" | "matched", talks, pick}.
-// `talks` is the lookup's top 3 and `pick` the one the person chose ("Not it?" changes it).
+// Photos stay on this phone, in IndexedDB: {id, takenAt, blob, state: "queued" | "matched", talks, pick, degraded}.
+// `talks` is the lookup's top 3 and `pick` the one the person chose ("Not it?" changes it). `degraded`:
+// Elastic's inference service was busy, so the match skipped the image search.
 const db = new Promise((resolve, reject) => {
   const open = indexedDB.open("slidekick", 1);
   open.onupgradeneeded = () => open.result.createObjectStore("photos", { keyPath: "id" });
@@ -78,7 +79,7 @@ async function openCamera(ask) {
   if (state !== "granted" && !ask) return cameraOff(state ?? "prompt");
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } },
       audio: false,
     });
   } catch {
@@ -145,9 +146,10 @@ $("photo").onchange = async (event) => {
   handle(blob, takenAt);
 };
 
-// At most 1280 px on the long side, about 300 KB: the server shrinks to that anyway.
+// At most 2560 px on the long side, about 1 MB. The server cuts the slide out of the photo, and from
+// the back of a room the slide is a fraction of it: at 1280 px a projected slide is about 400 px wide.
 function draw(source, width, height) {
-  const scale = Math.min(1, 1280 / Math.max(width, height));
+  const scale = Math.min(1, 2560 / Math.max(width, height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(width * scale);
   canvas.height = Math.round(height * scale);
@@ -236,12 +238,12 @@ async function lookup(photo) {
     }
     if (response.status === 429) return "Saved to your roll. That's a lot of photos at once: tap Retry on the roll in a minute.";
     if (!response.ok) return "Saved to your roll. Search isn't answering, so it'll try again later.";
-    const { talks } = await response.json();
+    const { talks, degraded } = await response.json();
     if (!talks.length) {
       await deletePhoto(photo.id);
       return "No talk matched that photo. Try again closer to the slide.";
     }
-    Object.assign(photo, { state: "matched", talks, pick: 0 });
+    Object.assign(photo, { state: "matched", talks, pick: 0, degraded });
     await putPhoto(photo);
     return "matched";
   } finally {
@@ -318,6 +320,7 @@ function renderMatch(photo) {
   $("recording").target = "_blank";
   $("recording-title").textContent = `Jump to ${at} in the recording`;
   $("recording-sub").textContent = "When this slide was on screen";
+  $("match-note").hidden = !photo.degraded;
 
   const others = photo.talks.map((t, i) => [t, i]).filter(([, i]) => i !== photo.pick);
   $("others").hidden = !others.length;
