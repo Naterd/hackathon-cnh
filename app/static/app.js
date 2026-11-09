@@ -126,9 +126,29 @@ $("shutter").onclick = async () => {
   flash.classList.remove("go");
   void flash.offsetWidth; // restart the animation
   flash.classList.add("go");
-  const blob = await draw(video, video.videoWidth, video.videoHeight);
-  setTimeout(() => handle(blob, Date.now()), 250); // let the flash show before Scanning covers it
+  const [blob, framed] = await Promise.all([draw(video, video.videoWidth, video.videoHeight), drawFramed()]);
+  setTimeout(() => handle(blob, Date.now(), framed), 250); // let the flash show before Scanning covers it
 };
+
+// What was inside the aim brackets, for the Scanning screen. The lookup still gets the whole photo:
+// the server finds the slide itself, and people don't always fit it in the frame.
+function drawFramed() {
+  const box = video.getBoundingClientRect();
+  const aim = $("aim").querySelector(".aim").getBoundingClientRect();
+  // The video is object-fit: cover, so it's scaled up to fill its box and centred.
+  const scale = Math.max(box.width / video.videoWidth, box.height / video.videoHeight);
+  const left = box.left + (box.width - video.videoWidth * scale) / 2;
+  const top = box.top + (box.height - video.videoHeight * scale) / 2;
+  const sx = Math.max(0, (aim.left - left) / scale);
+  const sy = Math.max(0, (aim.top - top) / scale);
+  const sw = Math.min(video.videoWidth - sx, aim.width / scale);
+  const sh = Math.min(video.videoHeight - sy, aim.height / scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(aim.width * devicePixelRatio);
+  canvas.height = Math.round(aim.height * devicePixelRatio);
+  canvas.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+}
 
 $("photo").onchange = async (event) => {
   const file = event.target.files[0];
@@ -202,13 +222,16 @@ function tiffTime(view, tiff) {
 
 // Photo ids with a lookup running, so a retry never races a capture over the same photo.
 const inFlight = new Set();
+let framedURL = null; // the Scanning screen's crop of the last capture
 
 // Save first, so a failed lookup still leaves the photo on the roll to retry.
-async function handle(blob, takenAt) {
+async function handle(blob, takenAt, framed = null) {
   const photo = { id: `${takenAt}-${Math.random().toString(36).slice(2, 8)}`, takenAt, blob, state: "queued", talks: [], pick: 0 };
   inFlight.add(photo.id); // before it's saved, where a retry could see it
   await putPhoto(photo);
-  $("scan-photo").src = photoURL(photo);
+  if (framedURL) URL.revokeObjectURL(framedURL);
+  framedURL = framed && URL.createObjectURL(framed);
+  $("scan-photo").src = framedURL || photoURL(photo);
   show("scan");
   say("Finding the talk…");
   const outcome = await lookup(photo);
