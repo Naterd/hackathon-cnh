@@ -113,7 +113,7 @@ Judged on: depth of instrumentation (traces, logs, metrics, real-user monitoring
 - [x] Metrics: Kubernetes CPU, memory and Jobs, plus request rate, errors and latency from spans
 - [x] Logs: pod logs from both namespaces arrive in Dash0 (1:30 PM check: 4,437 records an hour from `slidekick`, 2,068 from `ingest`)
 - [ ] Ingest telemetry: the V2 run fills the dashboard's "ingest: pipeline" section. Owner: whoever runs V2.
-- [ ] Real-user monitoring: Dash0's web SDK in `app/templates/base.html`, with `https://ingress.us-west-2.aws.dash0.com` in the CSP `connect-src`. Owner: team.
+- [x] Real-user monitoring: Dash0's web SDK in `app/templates/base.html` as service `slidekick-web` ([#18](https://github.com/Naterd/hackathon-cnh/pull/18)). The ingest-only token comes from `app-credentials`. Verified 2:18 PM: a page load reached Dash0 as page views and web events in about 15 s. (Ad blockers can block it on a laptop; phones are fine.)
 - [ ] The match confidence recorded on the lookup span, once `/api/lookup` is real. Owner: whoever wires the lookup.
 - [ ] Observability in the product, for example the lookup's latency or trace ID on the results page. Owner: team.
 - [ ] **Agent0 or the Dash0 MCP finds and fixes something real**, linked here. Owner: Joel.
