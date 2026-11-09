@@ -1,0 +1,11 @@
+# Never commit these: the repo is public.
+*kubeconfig*
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+node_modules/
+npm-debug.log*
+.DS_Store

@@ -1,0 +1,21 @@
+# Create this once, and Argo CD deploys deploy/ on every push to main.
+# Ask your agent to apply it through Radar's MCP server (apply_resource), or
+# apply it from Radar Cloud. Your repo must be public so Argo CD can read it.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app
+  namespace: team-__TEAM__
+spec:
+  project: team-__TEAM__
+  source:
+    repoURL: https://github.com/OWNER/REPO.git
+    targetRevision: main
+    path: deploy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: team-__TEAM__
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

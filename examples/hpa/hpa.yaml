@@ -1,0 +1,22 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: app
+spec:
+  scaleTargetRef:
+    # Using the canary example? Change these two lines to
+    # apiVersion: argoproj.io/v1alpha1 and kind: Rollout.
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app
+  minReplicas: 2
+  # 4 pods at the starter's 500m CPU limit is 2 of your team's 4 CPU of
+  # limits, which leaves room for a rollout's extra pod and your other workloads.
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

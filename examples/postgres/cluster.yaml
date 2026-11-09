@@ -1,0 +1,13 @@
+# A small Postgres for your app, run by the CloudNativePG operator that's
+# already in your cluster. Steps in README.md next to this file.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: db
+spec:
+  instances: 1
+  storage:
+    size: 1Gi
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }
