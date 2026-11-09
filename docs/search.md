@@ -45,9 +45,20 @@ A real still, with `slide` and `said` left out:
 
 ## Photo lookup
 
-1. **Prepare the photo.** Apply the EXIF orientation, shrink to at most 1280 px, and encode a JPEG under 900 KB; the field's limit is 1 MB of decoded bytes. Send it as an image object, not a bare data URL: `{"type": "image", "format": "base64", "value": "data:image/jpeg;base64,…"}`.
-2. **OCR it** with the same engine as ingest (RapidOCR, `rapidocr-onnxruntime==1.4.4`), so merged words match the same way on both sides. Create the engine once at startup: 0.5 s per photo warm, about 1 s cold.
-3. **Run one hybrid query** that merges three rankings with RRF:
+1. **Find the slide in the photo.** Apply the EXIF orientation. Then, in order:
+   - **A boxed recording** (338 of the 370 talks). Everything around the slide and the speaker camera is the same picture in every boxed recording: the logo, the mountains, the box outlines. `find_recording()` matches that fixed surround (`docs/layout-kubecon-na-2024.png`, SIFT points and a RANSAC homography) and cuts the slide box out of the full-size photo. It doesn't need the screen's edges, so it works on a projector screen with a margin, with the video in a browser window, and with a head in the way. The index holds only the slide box for these talks, so the crop is what makes the image search line up.
+   - **Any other screen** (stage keynotes, a slide photographed directly). `find_screen()` takes the innermost large four-sided outline and flattens it to 1280×720.
+   - **Neither:** use the photo as it is.
+2. **OCR it** with the same engine as ingest (RapidOCR, `rapidocr-onnxruntime==1.4.4`), so merged words match the same way on both sides. Create the engine once per worker thread: 0.5 s per photo warm, about 1 s cold.
+   - **Drop the recording's logo text** ("KubeCon", "CloudNativeCon", "North America") when the photo wasn't cropped to the slide box. It matches every keynote still, which is what sank screen photos in the first test (`docs/results.md`).
+   - **Encode the result** as a JPEG under 900 KB; the field's limit is 1 MB of decoded bytes. Send it as an image object, not a bare data URL: `{"type": "image", "format": "base64", "value": "data:image/jpeg;base64,…"}`.
+
+   `prepare()` in `docs/search_example.py` does all of this, and needs `layout-kubecon-na-2024.png` next to it. Upload the photo as large as you can afford: the slide box is cut from the full-size photo, and on a projector photo shrunk to 1280 px the slide is only about 400 px wide.
+3. **Try the pixel fingerprint first.** Shrink the prepared image to 32×18 grey pixels, subtract the mean and scale to unit length: 576 numbers. Search them with a plain kNN on `fp` in the side index `kubecon-details`, which holds the same fingerprint for every still under the same ids (`ingest/details.py`). It takes about 0.1 s and no inference call.
+   - **Why it works:** once the slide is cut out and flattened, the photo and the still are the same picture, pixel for pixel. That survives a small, washed-out projection whose text is too blurred to OCR.
+   - **When it's sure** (cosine at least 0.8, and at least 0.03 ahead of the best still from any other talk), return its answer and skip step 4. On simulated photos it was right 108 times out of 111 at that bar.
+   - **Otherwise** keep its hits as one more ranking for step 5, unless the best cosine is under 0.7, which is noise.
+4. **Run one hybrid query** that merges three rankings with RRF:
 
 ```json
 POST kubecon-moments/_search
@@ -65,14 +76,15 @@ POST kubecon-moments/_search
 }
 ```
 
-4. **Group the hits by `talk_id` in code.** Semantic fields don't support aggregations. Rank talks by their summed scores. The best talk's first hit is the moment to show, and its `url` opens YouTube at that second.
+5. **Merge and group in code.** Merge the hybrid hits and the fingerprint hits by rank (RRF, k = 60); they come from two indices. Then group by `talk_id`: semantic fields don't support aggregations. Rank talks by their best single hit, then by the sum of their best three. Don't sum every hit: RRF scores are nearly flat, so a sum mostly counts hits, and ten weak hits beat one still that came first on every leg. The best talk's first hit is the moment to show, and its `url` opens YouTube at that second. Show the top three talks: the right one is in the top three far more often than it is first.
+6. **Survive a throttled inference service.** The image search and the text-to-image search each need an embedding from Elastic's inference service, which answers HTTP 429 over its rate limit, after 4–6 s. `lookup()` doesn't retry the hybrid query: it falls back to the keyword search and the fingerprint, which need no inference, returns `"degraded": true`, and skips the inference legs for the next 20 s so only one lookup pays for finding out. With three tries a throttled lookup took 16 s.
 
 Things that bit us while testing:
 - **`rank_window_size` must be at least `size`.** It defaults to 10, so `size: 50` without it returns HTTP 400.
 - **Don't filter the kNN leg.** Only stills have `slide`, so it can only return stills anyway. With a `source` filter inside `knn`, the image search took 7–13 s instead of about 2 s. The text legs keep their filter.
 - **Always exclude `slide`, `said` and `abstract` from `_source`,** and never highlight `slide`. Each `slide` is about 100 KB of base64.
 - **Latency:** a full lookup takes 3.7–4.8 s warm from a laptop. The first query after a quiet spell took up to 13 s, so send a warm-up query at startup and show progress in the UI. The image embedding is most of the time.
-- **Confidence:** RRF scores are close together (about 0.03–0.05). Use the gap between the first and second talk's summed scores, not the raw score.
+- **Confidence:** RRF scores are close together (about 0.03–0.05). Use the gap between the first and second talk's `score`, not the raw score.
 
 Results on the two test photos in `docs/test-photos/` (rotated, low contrast, noisy):
 
@@ -145,4 +157,4 @@ Coverage: 361 of the 370 talks have Sched data, 315 of them with speakers and 20
 
 ## For the app image
 
-`pillow` and `rapidocr-onnxruntime==1.4.4`, which pulls in `onnxruntime` and `opencv-python`. Apt packages `libgl1` and `libglib2.0-0` are needed for OpenCV. Don't add any `opentelemetry-*` package: the Dash0 operator injects the SDK and turns itself off if it finds one.
+`pillow` and `rapidocr-onnxruntime==1.4.4`, which pulls in `onnxruntime`, `numpy` and `opencv-python`; the screen finder uses OpenCV too. Apt packages `libgl1` and `libglib2.0-0` are needed for OpenCV. Don't add any `opentelemetry-*` package: the Dash0 operator injects the SDK and turns itself off if it finds one.

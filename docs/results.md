@@ -46,6 +46,31 @@ What the baseline showed:
 - **Stage keynotes:** 22% talk@1, though only 18 photos.
 - **Next:** find the screen in the photo, flatten it, and crop to the slide box before the image search.
 
+### Projector photos and the fingerprint (Nov 9 afternoon)
+
+Two reviews asked whether the demo survives a projector: the talk on a laptop mirrored to a projector, photographed from the room. It didn't. `find_screen()` placed the video within 3% of its true corners in 21% of simulated projector photos, and in none when the video sat in a browser window. Three changes followed, each measured on the same 200 photos (seed 1).
+
+- **New photo modes:**
+  - **projector:** a lit wall, the picture at 30–70% of the photo's width, washed out, a screen margin, clutter, sometimes a head in the way.
+  - **browser:** the same, with the video in a browser window.
+- **Upload size:** every photo is shrunk to 1280 px first, as the app does before uploading.
+- **Not comparable with the baseline row:** these ran from a laptop over the 50 most-viewed talks (all the boxed layout), against the full live index.
+
+| Time (MT), raw report | Change | talk@1 | talk@3 | moment | laptop screen | slide only | projector | browser window | p50 / p95 latency | Throttled lookups |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 13:50, `projector-1` | Locate the recording by its fixed surround; best-hit talk ranking; three tries on HTTP 429 | 53% | 56% | 42.5% | 76% | 72% | 54% | 10% | 15.8 s / 17.2 s | 137 of 200 |
+| 14:05, `projector-2` | Add the pixel fingerprint, tried first; one retry on 429 | 73% | 80% | 63.5% | 88% | 66% | 78% | 60% | 10.3 s / 15.4 s | 103 of 200 |
+| 14:11, `projector-3` | Check each placement against the layout's pixels; no retry, and a 20 s pause on inference after a 429 | **78.5%** | **86.5%** | **68%** | 90% | 82% | 82% | 60% | 1.7 s / 7.4 s | 119 of 200 |
+
+What these runs showed:
+- **Locating the recording:** matching the fixed surround (logo, mountains, box outlines) places the video within 3% of its true corners in 97% of laptop photos, 86% of projector photos and 54% of browser-window photos, on 70 simulated photos each. `find_screen()` alone: 93%, 21%, 0%.
+- **The fingerprint carries projector photos.** At a 1280 px upload the projected slide is about 400 px wide, and OCR reads almost nothing: keywords alone found the right talk for 41% of them. The fingerprint alone, against all 12,086 stills, found 84%.
+- **When the fingerprint is sure, it is right:** 78 of 79 in the last run. Those lookups make no inference call and take about 1.5 s.
+- **False placements:** a slide's own KubeCon footer can match the logo. 14 of 60 slide-only photos were "located" wrongly, which is the drop to 66% in the second row. Correlating the flattened photo with the layout's fixed pixels separates them cleanly: right placements score 0.7–0.95, false ones below 0.
+- **Throttling shaped every row.** Elastic's inference trial limit answered HTTP 429 to most lookups at 4 in parallel, after 4–6 s each. More than half of each run's answers came from keywords and the fingerprint alone. Retrying cost 16 s a lookup; failing over at once and pausing inference for 20 s brought the median to 1.7 s.
+- **Talk ranking:** ranking by best hit beat summing every hit on all three runs (last run: 78.5% against 53.5% among the same top three).
+- **Still unmeasured:** the full 370-talk corpus with these modes (`INGEST_NS=ingest-ci ingest/run.sh eval --n 200 --modes screen,slide,projector,browser`), stage keynotes, and real photos off a real projector.
+
 ## Simulated photos used in the docs
 
-`docs/test-photos/appset-603s.jpg` and `networking-700s.jpg` both return the right talk and slide first. The links are `?t=549` and `?t=654`.
+`docs/test-photos/appset-603s.jpg` and `networking-700s.jpg` both return the right talk and slide first. The links are `?t=549` and `?t=654`. Rechecked Nov 9, 14:08 with the lookup above, while inference was throttled.

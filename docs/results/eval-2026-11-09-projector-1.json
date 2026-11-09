@@ -1,0 +1,104 @@
+{
+ "index": "kubecon-moments",
+ "seed": 1,
+ "errors": 0,
+ "all": {
+  "n": 200,
+  "talk@1": 0.53,
+  "talk@3": 0.56,
+  "talk@1_by_total": 0.475,
+  "degraded": 137,
+  "moment": 0.425,
+  "moment\u00b130s": 0.47,
+  "p50_s": 15.8,
+  "p95_s": 17.16
+ },
+ "mode=browser": {
+  "n": 50,
+  "talk@1": 0.1,
+  "talk@3": 0.1,
+  "talk@1_by_total": 0.08,
+  "degraded": 32,
+  "moment": 0.1,
+  "moment\u00b130s": 0.1,
+  "p50_s": 15.8,
+  "p95_s": 16.83
+ },
+ "mode=projector": {
+  "n": 50,
+  "talk@1": 0.54,
+  "talk@3": 0.56,
+  "talk@1_by_total": 0.48,
+  "degraded": 33,
+  "moment": 0.38,
+  "moment\u00b130s": 0.44,
+  "p50_s": 15.63,
+  "p95_s": 16.68
+ },
+ "mode=screen": {
+  "n": 50,
+  "talk@1": 0.76,
+  "talk@3": 0.86,
+  "talk@1_by_total": 0.74,
+  "degraded": 36,
+  "moment": 0.7,
+  "moment\u00b130s": 0.72,
+  "p50_s": 15.78,
+  "p95_s": 17.62
+ },
+ "mode=slide": {
+  "n": 50,
+  "talk@1": 0.72,
+  "talk@3": 0.72,
+  "talk@1_by_total": 0.6,
+  "degraded": 36,
+  "moment": 0.52,
+  "moment\u00b130s": 0.62,
+  "p50_s": 15.91,
+  "p95_s": 17.74
+ },
+ "layout=box": {
+  "n": 200,
+  "talk@1": 0.53,
+  "talk@3": 0.56,
+  "talk@1_by_total": 0.475,
+  "degraded": 137,
+  "moment": 0.425,
+  "moment\u00b130s": 0.47,
+  "p50_s": 15.8,
+  "p95_s": 17.16
+ },
+ "found=photo": {
+  "n": 2,
+  "talk@1": 1.0,
+  "talk@3": 1.0,
+  "talk@1_by_total": 1.0,
+  "degraded": 1,
+  "moment": 1.0,
+  "moment\u00b130s": 1.0,
+  "p50_s": 10.02,
+  "p95_s": 17.26
+ },
+ "found=recording": {
+  "n": 155,
+  "talk@1": 0.439,
+  "talk@3": 0.477,
+  "talk@1_by_total": 0.406,
+  "degraded": 107,
+  "moment": 0.374,
+  "moment\u00b130s": 0.394,
+  "p50_s": 15.75,
+  "p95_s": 16.96
+ },
+ "found=screen": {
+  "n": 43,
+  "talk@1": 0.837,
+  "talk@3": 0.837,
+  "talk@1_by_total": 0.698,
+  "degraded": 29,
+  "moment": 0.581,
+  "moment\u00b130s": 0.721,
+  "p50_s": 15.93,
+  "p95_s": 17.87
+ }
+}
