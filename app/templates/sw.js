@@ -1,7 +1,12 @@
 // Rendered per deploy: the version in the cache name changes this file's bytes, so the
 // browser installs the new worker and the old cache gets dropped on activate.
 const CACHE = "slidekick-{{ version }}";
-const SHELL = ["/", "/static/style.css?v={{ version }}", "/static/app.js?v={{ version }}"];
+const SHELL = [
+  "/",
+  "/static/style.css?v={{ version }}",
+  "/static/app.js?v={{ version }}",
+  "/static/fonts/familjen-grotesk-latin.woff2",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
