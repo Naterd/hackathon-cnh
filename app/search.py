@@ -7,13 +7,21 @@ import json
 import logging
 import os
 import sys
+import contextvars
 import threading
+import time
 import urllib.request
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
+
+try:  # The API only; the Dash0 operator injects the SDK. Without it every call is a no-op.
+    from opentelemetry import trace
+except ImportError:
+    trace = None
 
 try:  # the image ships it next to this file
     import search_example
@@ -35,12 +43,43 @@ ocr_lock = threading.Lock()
 # search_example makes an engine per thread, about 300 MB each. The thread pool also serves
 # /api/slide and grows to dozens of threads, which would take the pod past its 2Gi limit.
 def one_ocr(img):
-    with ocr_lock:
+    with _timed("ocr"), ocr_lock:
         result, _ = ocr(img)
     return [(text, *np.mean(box, axis=0)) for box, text, _ in (result or [])]
 
 
+# Time and trace search_example's OCR and Elasticsearch calls. It makes them on the calling
+# thread, through these module names, so the request's trace and _timings reach them.
+_tracer = trace.get_tracer("slidekick.lookup") if trace else None
+_timings = contextvars.ContextVar("lookup_timings", default=None)
+
+
+class _timed:
+    def __init__(self, phase):
+        self.phase = phase
+        self.span = _tracer.start_as_current_span(f"lookup.{phase}") if _tracer else nullcontext()
+
+    def __enter__(self):
+        self.span.__enter__()
+        self.start = time.perf_counter()
+
+    def __exit__(self, *exc):
+        t = _timings.get()
+        if t is not None:
+            t[self.phase] = t.get(self.phase, 0.0) + time.perf_counter() - self.start
+        return self.span.__exit__(*exc)
+
+
+_reference_es = search_example.es
+
+
+def _traced_es(*args, **kwargs):
+    with _timed("search"):
+        return _reference_es(*args, **kwargs)
+
+
 search_example.ocr = one_ocr
+search_example.es = _traced_es
 Throttled = search_example.Throttled
 
 
@@ -79,7 +118,12 @@ def lookup(photo):
         raise BadPhoto(str(e)) from e
 
     # Not inside the try: urllib's errors are OSErrors too, and a 400 makes the page delete the photo.
-    result = search_example.lookup(photo)
+    start, timings = time.perf_counter(), {}
+    token = _timings.set(timings)
+    try:
+        result = search_example.lookup(photo)
+    finally:
+        _timings.reset(token)
     if result["degraded"] and not result["talks"]:
         # No inference, no words and no fingerprint: a 503 keeps the photo queued, where an
         # empty answer would make the page delete it.
@@ -88,7 +132,31 @@ def lookup(photo):
         t.update(names({"title": t["title"], "speakers_text": t["speakers"]}))
         for m in t["moments"]:
             m["n"] = int(m["id"][-3:])  # still ids end in the slide's number
-    return {k: result[k] for k in ("talks", "found", "degraded", "fingerprint")}
+    out = {k: result[k] for k in ("talks", "found", "degraded", "fingerprint")}
+    out["meta"] = _observe(result, timings, time.perf_counter() - start)
+    return out
+
+
+def _observe(result, timings, total):
+    """Timings and the trace ID for the results page; the match on the request's span."""
+    meta = {"ocr_ms": round(1000 * timings.get("ocr", 0.0)), "search_ms": round(1000 * timings.get("search", 0.0)),
+            "total_ms": round(1000 * total)}
+    if not trace:
+        return meta
+    span = trace.get_current_span()
+    if span.get_span_context().is_valid:
+        meta["trace_id"] = format(span.get_span_context().trace_id, "032x")
+    talks = result["talks"]
+    span.set_attribute("slidekick.match.talks", len(talks))
+    span.set_attribute("slidekick.match.found", result["found"])
+    span.set_attribute("slidekick.match.degraded", result["degraded"])
+    span.set_attribute("slidekick.match.fingerprint_cosine", result["fingerprint"]["cosine"])
+    if talks:
+        span.set_attribute("slidekick.match.talk_id", talks[0]["talk_id"])
+        span.set_attribute("slidekick.match.score", talks[0]["score"])
+        # The lead over the runner-up is the confidence: a close second means a coin flip.
+        span.set_attribute("slidekick.match.gap", talks[0]["score"] - (talks[1]["score"] if len(talks) > 1 else 0.0))
+    return meta
 
 
 def names(source):

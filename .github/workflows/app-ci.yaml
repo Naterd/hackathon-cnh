@@ -7,6 +7,7 @@ on:
       - Dockerfile
       - tests/app_smoke.py
       - tests/fairshare_test.py
+      - tests/observability_test.py
       - .github/workflows/app-ci.yaml
   workflow_dispatch:
 permissions:
@@ -28,5 +29,10 @@ jobs:
       - name: Sessions and fair share
         working-directory: app
         run: python ../tests/fairshare_test.py
+      - name: Tracing and lookup telemetry
+        working-directory: app
+        run: |
+          pip install opentelemetry-sdk==1.44.0
+          python ../tests/observability_test.py
       - name: Build the image
         run: docker build --build-arg APP_VERSION=ci -t slidekick-app:ci .
