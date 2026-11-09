@@ -1,0 +1,38 @@
+name: ingest-image
+# Builds the ingest image (ffmpeg, OCR, Python deps) whenever ingest/ changes, on any branch,
+# so a pull request can be tested on the cluster before it merges. Only main updates :latest.
+on:
+  push:
+    paths:
+      - ingest/**
+      - .github/workflows/ingest-image.yaml
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Image name and tags
+        id: meta
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}/ingest"
+          tags="$image:${GITHUB_SHA::7}"
+          [[ $GITHUB_REF == refs/heads/main ]] && tags+=",$image:latest"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ingest/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

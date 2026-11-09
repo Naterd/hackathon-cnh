@@ -8,6 +8,8 @@ on:
     paths-ignore:
       - deploy/kustomization.yaml
       - "**.md"
+      - ingest/**                       # built by ingest-image.yaml; not part of the app
+      - .github/workflows/ingest-image.yaml
   workflow_dispatch:
 
 permissions:

@@ -1,0 +1,55 @@
+# One pod per talk on the spot ingest pool. Rendered and applied by ingest/run.sh.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ingest-extract
+  namespace: ingest
+  labels: {app: ingest, step: extract, purpose: cnh-hackathon, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
+spec:
+  completionMode: Indexed
+  completions: __COUNT__
+  parallelism: __PARALLEL__
+  backoffLimitPerIndex: 2
+  podFailurePolicy:
+    rules:
+      - action: Ignore                 # spot preemption: rerun the talk without counting a failure
+        onPodConditions: [{type: DisruptionTarget}]
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app: ingest, step: extract, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
+      annotations:
+        gke-gcsfuse/volumes: "true"
+        gke-gcsfuse/ephemeral-storage-limit: "5Gi"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: downloader
+      nodeSelector: {workload: ingest}
+      tolerations: [{key: workload, operator: Equal, value: ingest, effect: NoSchedule}]
+      containers:
+        - name: extract
+          image: __IMAGE__
+          command: ["sh", "-c", "__SETUP__ exec python -u /code/extract.py --src /bucket/__EVENT__ --out /bucket/derived/__DERIVED__/__EVENT__ --talks /talks/talks.txt"]
+          env:
+            - {name: WORK, value: /work}
+            - {name: WORKERS, value: "2"}
+            - {name: FORCE, value: "__FORCE__"}
+          resources:
+            requests: {cpu: "2", memory: 3Gi}
+            limits: {cpu: "2", memory: 4Gi}
+          volumeMounts:
+            - {name: bucket, mountPath: /bucket}
+            - {name: work, mountPath: /work}
+            - {name: code, mountPath: /code}
+            - {name: talks, mountPath: /talks}
+      volumes:
+        - name: bucket
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            volumeAttributes: {bucketName: __BUCKET__, mountOptions: "implicit-dirs,uid=1000,gid=1000"}
+        - name: work
+          emptyDir: {sizeLimit: 5Gi}
+        - name: code
+          configMap: {name: ingest-code}
+        - name: talks
+          configMap: {name: ingest-talks}
