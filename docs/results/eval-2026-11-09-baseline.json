@@ -1,0 +1,50 @@
+{
+ "index": "kubecon-moments",
+ "seed": 1,
+ "errors": 0,
+ "all": {
+  "n": 200,
+  "talk@1": 0.58,
+  "talk@3": 0.735,
+  "moment": 0.43,
+  "moment\u00b130s": 0.475,
+  "p50_s": 3.52,
+  "p95_s": 7.43
+ },
+ "mode=screen": {
+  "n": 100,
+  "talk@1": 0.47,
+  "talk@3": 0.6,
+  "moment": 0.32,
+  "moment\u00b130s": 0.36,
+  "p50_s": 3.51,
+  "p95_s": 6.17
+ },
+ "mode=slide": {
+  "n": 100,
+  "talk@1": 0.69,
+  "talk@3": 0.87,
+  "moment": 0.54,
+  "moment\u00b130s": 0.59,
+  "p50_s": 3.52,
+  "p95_s": 7.69
+ },
+ "layout=box": {
+  "n": 182,
+  "talk@1": 0.615,
+  "talk@3": 0.742,
+  "moment": 0.451,
+  "moment\u00b130s": 0.5,
+  "p50_s": 3.48,
+  "p95_s": 7.69
+ },
+ "layout=full": {
+  "n": 18,
+  "talk@1": 0.222,
+  "talk@3": 0.667,
+  "moment": 0.222,
+  "moment\u00b130s": 0.222,
+  "p50_s": 3.84,
+  "p95_s": 5.1
+ }
+}

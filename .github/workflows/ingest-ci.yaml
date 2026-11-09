@@ -1,0 +1,50 @@
+name: ingest-ci
+# For PRs that touch the ingest: a smoke test (extract and index 4 edge-case talks into a scratch
+# index) and an accuracy gate (the random phone-photo test against the live index). Both run as
+# Jobs on GKE, driven by our self-hosted runners (ci/arc/); the runner itself does little work.
+on:
+  pull_request:
+    paths:
+      - ingest/**
+      - ci/**
+      - .github/workflows/ingest-ci.yaml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ingest-ci            # one run at a time: CI Jobs share the -ci names
+  cancel-in-progress: false
+env:
+  CNH_BUCKET: cnh-kubecon-media-f21b83
+  JOB_SUFFIX: -ci
+  # a breakout, a terminal-heavy talk, a stage keynote and a lightning talk
+  SMOKE_TALKS: 9RvDczVIiS0,Mj04QOqAaJ8,4d4X8S4Zeks,Cakv3miyVr4
+jobs:
+  ingest:
+    # Same-repo PRs only: code from a fork never reaches the cluster runners.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: slidekick-gke
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install kubectl
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -sSfLo "$HOME/bin/kubectl" "https://dl.k8s.io/release/$(curl -sSfL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x "$HOME/bin/kubectl"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - name: Smoke test, extract 4 talks
+        env: {DERIVED: ci}
+        run: |
+          ingest/run.sh extract --force --talks "$SMOKE_TALKS"
+          ingest/run.sh wait extract
+      - name: Smoke test, index them into kubecon-moments-ci
+        env: {DERIVED: ci}
+        run: |
+          ingest/run.sh index --index kubecon-moments-ci --replace --talks "$SMOKE_TALKS"
+          ingest/run.sh wait index
+      - name: Accuracy gate, 60 random photos against the live index
+        env: {DERIVED: v1}
+        run: |
+          ingest/run.sh eval --n 60 --min-talk1 0.45
+          ingest/run.sh wait eval

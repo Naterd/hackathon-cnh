@@ -1,0 +1,38 @@
+# The CI runners' service account. It can start and read ingest Jobs in namespace ingest and
+# nothing else: no Secrets, no other namespaces. The Jobs do the heavy work on the spot pool with
+# their own service account (bucket access through Workload Identity).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-runner
+  namespace: arc-runners
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-runner
+  namespace: ingest
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-runner
+  namespace: ingest
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ci-runner
+subjects:
+  - kind: ServiceAccount
+    name: ci-runner
+    namespace: arc-runners

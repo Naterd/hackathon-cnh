@@ -1,0 +1,22 @@
+# gha-runner-scale-set values: workflows with `runs-on: slidekick-gke` get a fresh runner pod on
+# the spot pool, which scales back to zero when idle. The runner only drives ingest Jobs, so it's small.
+githubConfigUrl: https://github.com/Naterd/hackathon-cnh
+githubConfigSecret: gh-runner-token          # key github_token: a fine-grained PAT, Administration read/write
+runnerScaleSetName: slidekick-gke
+minRunners: 0
+maxRunners: 3
+template:
+  metadata:
+    labels:
+      app.kubernetes.io/name: slidekick-ci-runner
+  spec:
+    serviceAccountName: ci-runner
+    nodeSelector: {workload: ingest}
+    tolerations: [{key: workload, operator: Equal, value: ingest, effect: NoSchedule}]
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:2.338.2
+        command: ["/home/runner/run.sh"]
+        resources:
+          requests: {cpu: 500m, memory: 1Gi}
+          limits: {cpu: "2", memory: 2Gi}

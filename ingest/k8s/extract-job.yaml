@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ingest-extract
+  name: ingest-extract__SUFFIX__
   namespace: ingest
   labels: {app: ingest, step: extract, purpose: cnh-hackathon, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
 spec:
@@ -50,6 +50,6 @@ spec:
         - name: work
           emptyDir: {sizeLimit: 5Gi}
         - name: code
-          configMap: {name: ingest-code}
+          configMap: {name: ingest-code__SUFFIX__}
         - name: talks
-          configMap: {name: ingest-talks}
+          configMap: {name: ingest-talks__SUFFIX__}
