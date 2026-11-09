@@ -1,3 +1,5 @@
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");
+
 const photo = document.getElementById("photo");
 const preview = document.getElementById("preview");
 const status = document.getElementById("status");

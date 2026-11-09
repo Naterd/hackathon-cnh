@@ -26,3 +26,11 @@ def health():
 @app.get("/")
 def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
+
+
+# Served from the root, not /static, so the worker's scope covers the whole app.
+@app.get("/sw.js")
+def service_worker(request: Request):
+    return templates.TemplateResponse(
+        request, "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"}
+    )
