@@ -48,7 +48,21 @@ Dash0 trial organization, region AWS `us-west-2`, dataset `default`.
 - **Browser monitoring:** add Dash0's web SDK script to `base.html`, and allow `https://ingress.us-west-2.aws.dash0.com` in the page's CSP `connect-src`.
 - **The API token never goes in this repo or the image.** The repo is public.
 
+**Getting the API token (for you or your agent).** Use the copy in the cluster, not a chat or a file in the repo. You need `kubectl` access to `cnh`:
+
+```bash
+gcloud container clusters get-credentials cnh --zone us-west3-a --project five9-cyclops-playground --dns-endpoint
+kubectl -n dash0-system get secret dash0-authorization-secret -o jsonpath='{.data.token}' | base64 -d | sed 's/^/Authorization: Bearer /' > ~/.dash0-auth-header
+chmod 600 ~/.dash0-auth-header
+curl -s -H @"$HOME/.dash0-auth-header" "https://api.us-west-2.aws.dash0.com/api/dashboards?dataset=default"
+```
+
+The header file keeps the token out of command lines, shell history and agent output. Agents: never print the token or paste it into a commit, PR or chat. Any Dash0 API call takes `-H @"$HOME/.dash0-auth-header"` plus `?dataset=default`. For example, PromQL goes to `GET /api/prometheus/api/v1/query?dataset=default&query=…`. The trial token can read and write dashboards, check rules, SLOs and synthetic checks.
+
 **Dashboard: "SlideKick: Four Golden Signals"** has one section for the app and one for ingest, each covering latency, traffic, errors and saturation. Latency, traffic and errors come from Dash0's span metrics (`dash0_spans_total`, `dash0_spans_duration_seconds_bucket`), filtered by `k8s_namespace_name`, `otel_span_kind` and `otel_span_status_code`. Saturation comes from the pods' CPU and memory against their limits, and from ready nodes. The panels stay empty until instrumented code is running.
+
+- **Open it:** [app.dash0.com](https://app.dash0.com), then **Dashboards** > *SlideKick: Four Golden Signals*.
+- **API:** `GET https://api.us-west-2.aws.dash0.com/api/dashboards/slidekick-golden-signals?dataset=default`. To update it, `PUT` the edited JSON to the same URL.
 
 **Gotchas:**
 - A namespace's data shows up about 2 minutes after its `Dash0Monitoring` resource is applied.
