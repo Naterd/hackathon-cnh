@@ -10,5 +10,5 @@ resources:
   - httproute.yaml
 images:
   - name: app
-    newName: ghcr.io/OWNER/REPO
-    newTag: latest
+    newName: ghcr.io/naterd/hackathon-cnh
+    newTag: 870b77d
