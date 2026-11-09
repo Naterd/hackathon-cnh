@@ -3,8 +3,8 @@
 # Before this, create the runner token Secret (a fine-grained PAT on this repo, Administration read/write):
 #   kubectl create namespace arc-runners
 #   pbpaste | kubectl -n arc-runners create secret generic gh-runner-token --from-file=github_token=/dev/stdin
-# Also needs CNH_PROJECT and CNH_BUCKET (source <hackathon>/infra/config.env), and ELASTIC_URL and the admin
-# ELASTIC_ES_API_KEY (set -a; source <hackathon>/.env) to mint CI's restricted key the first time.
+# Also needs CNH_PROJECT and CNH_BUCKET (source <hackathon>/infra/config.env), ELASTIC_URL (set -a; source
+# <hackathon>/.env), and the first time, CI's Elasticsearch key on the clipboard (see below).
 # Re-running is safe: helm upgrades in place.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -28,11 +28,11 @@ gcloud storage buckets add-iam-policy-binding "gs://$CNH_BUCKET" --member="$ci" 
 gcloud storage buckets add-iam-policy-binding "gs://$CNH_BUCKET" --member="$ci" --role=roles/storage.objectUser \
   --condition="title=ci-writes,expression=resource.name.startsWith('$objs/derived/ci/') || resource.name.startsWith('$objs/eval/')" >/dev/null
 
-# CI's Elasticsearch key (es-ci-key.json: read the live index, write kubecon-moments-ci, expires in 14 days)
+# CI's Elasticsearch key: it can read the live index and write only kubecon-moments-ci. An API key can't
+# create a key with privileges, so make it in Kibana: API keys > Create, expire in 14 days, turn on
+# "Control security privileges", paste es-ci-key.json. Copy the encoded key, then re-run this script.
 if ! kubectl -n ingest-ci get secret elastic >/dev/null 2>&1; then
-  key=$(curl -sSf -X POST "$ELASTIC_URL/_security/api_key" -H "Authorization: ApiKey $ELASTIC_ES_API_KEY" \
-    -H 'Content-Type: application/json' -d @es-ci-key.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["encoded"])')
-  printf 'ELASTIC_URL=%s\nELASTIC_ES_API_KEY=%s\n' "$ELASTIC_URL" "$key" |
+  printf 'ELASTIC_URL=%s\nELASTIC_ES_API_KEY=%s\n' "$ELASTIC_URL" "$(pbpaste)" |
     kubectl -n ingest-ci create secret generic elastic --from-env-file=/dev/stdin
 fi
 

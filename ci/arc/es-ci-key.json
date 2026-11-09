@@ -1,13 +1,9 @@
 {
-  "name": "slidekick-ci",
-  "expiration": "14d",
-  "role_descriptors": {
-    "ci": {
-      "cluster": ["monitor_inference"],
-      "indices": [
-        {"names": ["kubecon-moments", "kubecon-moments-v*"], "privileges": ["read", "view_index_metadata"]},
-        {"names": ["kubecon-moments-ci"], "privileges": ["all"]}
-      ]
-    }
+  "slidekick-ci": {
+    "cluster": ["monitor_inference"],
+    "indices": [
+      {"names": ["kubecon-moments", "kubecon-moments-v*"], "privileges": ["read", "view_index_metadata"]},
+      {"names": ["kubecon-moments-ci"], "privileges": ["all"]}
+    ]
   }
 }
