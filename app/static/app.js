@@ -224,6 +224,8 @@ function tiffTime(view, tiff) {
 
 // Photo ids with a lookup running, so a retry never races a capture over the same photo.
 const inFlight = new Set();
+// Photo ids deleted from the roll, so a lookup that finishes afterwards doesn't save the photo again.
+const deleted = new Set();
 let framedURL = null; // the Scanning screen's crop of the last capture
 
 // Save first, so a failed lookup still leaves the photo on the roll to retry.
@@ -268,6 +270,7 @@ async function lookup(photo) {
       await deletePhoto(photo.id);
       return "No talk matched that photo. Try again closer to the slide.";
     }
+    if (deleted.has(photo.id)) return "That photo was deleted.";
     Object.assign(photo, { state: "matched", talks, pick: 0, degraded, meta });
     await putPhoto(photo);
     return "matched";
@@ -492,10 +495,9 @@ $("select").onclick = () => {
 };
 
 $("delete").onclick = async () => {
-  // A photo with a lookup running would be saved again when it finishes: leave it for now.
-  const ids = [...selected].filter((id) => !inFlight.has(id));
-  const busy = selected.size - ids.length;
+  const ids = [...selected];
   for (const id of ids) {
+    deleted.add(id); // first: a lookup of this photo may be running, or start while we wait
     await deletePhoto(id);
     URL.revokeObjectURL(urls.get(id));
     urls.delete(id);
@@ -503,7 +505,7 @@ $("delete").onclick = async () => {
   selecting = false;
   selected.clear();
   await renderRoll();
-  toast(`${plural(ids.length, "photo")} deleted from this phone.` + (busy ? ` ${plural(busy, "photo")} still matching: try again in a moment.` : ""));
+  toast(`${plural(ids.length, "photo")} deleted from this phone.`);
 };
 
 async function renderRollThumb() {
