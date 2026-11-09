@@ -2,6 +2,17 @@
 
 **Team rule: pull before every commit.** Three of us and the deploy bot push to `main` all day. Before each `git commit`, run `git pull --rebase --autostash` as its own command. The pre-commit hook in `.githooks/` refuses a commit while the branch is behind `origin`. Enable it once per clone with `git config core.hooksPath .githooks`.
 
+**Team rule: large changes go through a pull request.** The PR is what triggers the Gitar review, and the Gitar track judges reviewed PRs landing all day.
+- **Large:** a new feature, app or ingest code, Kubernetes or Argo CD manifests, the index mapping, CI, or more than about 50 changed lines.
+- **Small:** typos, docs and one-line config fixes, which can go straight to `main`.
+- **Steps for a large change:**
+  1. Branch from an up-to-date `main`: `git switch -c <short-name>`.
+  2. Commit and push the branch.
+  3. Open the PR with `gh pr create --fill`.
+  4. Wait for the review and fix what it finds.
+  5. Merge with `gh pr merge --squash --delete-branch`. The merge deploys.
+- **Precedence:** this rule overrides "push to `main`" wherever the notes below say it.
+
 This repo deploys to this team's own Kubernetes cluster at the Cloud Native Hackathon: a virtual cluster (vcluster) that Radar Cloud lists as **`__TEAM__`**, where the team is cluster-admin. The app runs in namespace `team-__TEAM__`. Use Radar Cloud's MCP server (`radar-cloud`) for everything you observe or change on the cluster. Read each tool's schema; don't invent parameters.
 
 **Pass `cluster` on every Radar call.** The organization has about 40 team clusters plus `cnh`, the platform's cluster, where teams have no access. Call `list_clusters` once per session, take the `id` of the entry whose `name` is exactly `__TEAM__`, and pass that id as `cluster` on every other Radar tool call. With this many clusters the tools can't pick a default. The person only has access to this team's cluster; never call a tool against `cnh` or another team's cluster. Pass `namespace: team-__TEAM__` wherever a tool takes it, unless you mean another namespace in this cluster.
