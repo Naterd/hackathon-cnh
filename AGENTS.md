@@ -1,8 +1,12 @@
 # Notes for your coding agent
 
-**Team rule: pull before every commit.** Three of us and the deploy bot push to `main` all day. Before each `git commit`, run `git pull --rebase --autostash` as its own command. The pre-commit hook in `.githooks/` refuses a commit while the branch is behind `origin`. Enable it once per clone with `git config core.hooksPath .githooks`.
+SlideKick: photograph a KubeCon slide and get the talk, the speaker and a YouTube link at the moment that slide appeared. FastAPI with server-rendered pages and a plain-JavaScript PWA, Elasticsearch Serverless, and GKE with Argo CD. The README has the status, architecture and setup. The repo and the image are public.
 
-**Team rule: large changes go through a pull request.** The PR is what triggers the Gitar review, and the Gitar track judges reviewed PRs landing all day.
+## Team rules
+
+**Pull before every commit.** Three of us and the deploy bot push to `main` all day. Before each `git commit`, run `git pull --rebase --autostash` as its own command. The pre-commit hook in `.githooks/` refuses a commit while the branch is behind `origin`. Enable it once per clone with `git config core.hooksPath .githooks`.
+
+**Large changes go through a pull request.** The PR is what triggers the Gitar review, and the Gitar track judges reviewed PRs landing all day.
 - **Large:** a new feature, app or ingest code, Kubernetes or Argo CD manifests, the index mapping, CI, or more than about 50 changed lines.
 - **Small:** typos, docs and one-line config fixes, which can go straight to `main`.
 - **Steps for a large change:**
@@ -11,69 +15,72 @@
   3. Open the PR with `gh pr create --fill`.
   4. Wait for the review and fix what it finds.
   5. Merge with `gh pr merge --squash --delete-branch`. The merge deploys.
-- **Precedence:** this rule overrides "push to `main`" wherever the notes below say it.
 
-**On our cluster. This overrides the starter text below and in `.agents/skills/`.** We don't use the hackathon's shared cluster. We run our own GKE cluster, `cnh`, connected to our own Radar Cloud organization, not Cloud Native Hackathon. The app runs in namespace **`slidekick`**, not `team-<team>`. Argo CD's Application is **`slidekick` in namespace `argocd`** (project `slidekick`), not `app` in `team-<team>`, so use that name and namespace wherever a skill says Application `app`. The workloads are still Deployment and Service `app`. GitOps is already running: **never apply another Application for `deploy/`**, or two Applications will fight over the same resources. If `slidekick` is missing, apply `argocd/project.yaml`, then `argocd/application-byo.yaml`. The URL is `https://slidekick.us`, not `https://<team>.cnh.radarhq.io`. No budget or host limits apply.
+## Writing code
 
-This repo deploys to this team's own Kubernetes cluster at the Cloud Native Hackathon: a virtual cluster (vcluster) that Radar Cloud lists as **`__TEAM__`**, where the team is cluster-admin. The app runs in namespace `team-__TEAM__`. Use Radar Cloud's MCP server (`radar-cloud`) for everything you observe or change on the cluster. Read each tool's schema; don't invent parameters.
+- Write the least code that does the job. No speculative helpers, options, config or abstractions.
+- Comment only a non-obvious why. Don't restate the code, add banner comments, or docstring a trivial function.
+- Commit messages and PR descriptions: a short title, then a few lines on what changed and why. No filler, and no list of every file touched.
+- Plain JavaScript in the browser: no framework, bundler or build step.
+- `.gitar/review/main.md` lists what blocks a merge. Gitar checks every PR against it, so check your change against it first.
+- Run shell commands one at a time, in plain form. Claude Code asks for approval on any command with `$(…)`, `$?` or shell variables. Write and edit files with your file tools, not heredocs.
 
-**Pass `cluster` on every Radar call.** The organization has about 40 team clusters plus `cnh`, the platform's cluster, where teams have no access. Call `list_clusters` once per session, take the `id` of the entry whose `name` is exactly `__TEAM__`, and pass that id as `cluster` on every other Radar tool call. With this many clusters the tools can't pick a default. The person only has access to this team's cluster; never call a tool against `cnh` or another team's cluster. Pass `namespace: team-__TEAM__` wherever a tool takes it, unless you mean another namespace in this cluster.
+## Where it runs
 
-Deploys are GitOps: change the repo, push to `main`, and Argo CD syncs the namespace. Pushing to `main` is how you deploy here, so when the person asks you to ship, fix, add or change something, that's the go-ahead to commit and push it; ask first only about changes they didn't ask for. Argo CD runs inside this cluster (namespace `argocd`) with no web UI; you drive it with `manage_gitops`. Your Argo CD Application is `slidekick` in namespace `argocd`: pass that name and namespace when you look it up, sync it or `diagnose` it. Don't apply or patch app manifests on the cluster. Argo CD's self-heal puts the repo's version back. GitOps is already started (Application `slidekick` in `argocd`); don't apply another Application. One-off Jobs and credential Secrets deliberately kept outside git can also be created directly when Argo CD does not own them; follow `examples/agent-workflows/README.md`.
+GKE cluster `cnh`, project `five9-cyclops-playground`, zone `us-west3-a`.
 
-**Run shell commands one at a time, in plain form.** Claude Code asks the person to approve any command with `$(…)`, `$?` or shell variables, so avoid them: run `git rev-parse HEAD` on its own and use the SHA it prints in the next command; `gh run watch <id> --exit-status` already fails when the run fails, so don't echo `$?`; run `git pull --rebase` as its own command. Write and edit files with your file tools, not heredocs.
+- **App:** namespace `slidekick`, Deployment and Service `app`, behind the GKE Ingress at https://slidekick.us. The load balancer health-checks `/readyz`.
+- **Ingest:** Jobs in namespace `ingest` on the spot pool, with `nodeSelector: {workload: ingest}` and a toleration for `workload=ingest:NoSchedule`. Run them with `kubectl apply`: Argo CD doesn't manage Jobs.
+- **Deploys:** a merge to `main` runs the `build-and-deploy` Action, which pushes the image to GHCR and commits `deploy: <sha> [skip ci]`. Argo CD (Application `slidekick` in namespace `argocd`, no web UI) syncs `deploy/` within about 3 minutes. Pull that deploy commit before your next push. Markdown-only pushes skip the build.
+- **Rollback:** `git revert` the bad commit on `main`. Don't `kubectl edit` what Argo CD owns: self-heal puts the git version back.
+- **Secrets:** `slidekick/app-credentials` for the app, `ingest/elastic` (`ELASTIC_URL`, `ELASTIC_ES_API_KEY`) for ingest. Never in git, the image, a build argument or your output.
 
-## When to do what
+## Radar (AI SRE track)
 
-- **The person asks to get set up, or what to do first.** Follow the `get-started` skill. It checks first, and asks once before it pushes and deploys.
-- **Before anything else: is this repo set up?** If the cluster name in bold at the top of this file is still a placeholder (capital letters between double underscores) rather than a team name, `./scripts/setup.sh` hasn't run in this clone. Use the team name the person gave you, or ask for it, and run `./scripts/setup.sh <team>` (it only edits files in this clone; pushing comes later, with the `ship` skill), then read this file again. A missing team name is not an invite problem.
-- **First cluster access in a session.** Call `list_clusters`, find `__TEAM__`, and read the workloads in `team-__TEAM__` with its id. If you have no Radar tools, or they need authentication, the person connects and signs in (the `get-started` skill has the steps). If no cluster is named `__TEAM__`, the person hasn't accepted the Radar Cloud invite, or picked a different organization when connecting (no `cnh` in the list means another organization). Ask them to sign in again and pick **Cloud Native Hackathon** under "Organization access". If it's there but your calls to it are refused within a few minutes of sign-up, that's normal: access lands a minute or two after signing up. Wait a minute and retry, for up to about 5 minutes. After that, check that the person signed in with an email the team listed when it joined. If it's disconnected, or nothing here helps, ask an organizer at the Radar table. Don't go on until you can read the namespace.
-- **After every push.** Follow the `ship` skill’s build-trigger rules. For a build-triggering push, confirm the `build-and-deploy` GitHub Action for the pushed application commit succeeded and produced its `deploy: <sha> [skip ci]` commit, then `git pull --rebase` it so your next push isn't rejected. Sync or inspect the Argo CD Application through Radar, confirm the live workload uses that build’s image, then wait for the rollout. A healthy old revision is not proof the push deployed. Check three things before saying it's deployed: the synced revision, workload health, and the URL showing the new version. Procedure: the `ship` skill.
-- **A deploy or the app fails.** Read the evidence first: `issues`, `get_changes`, events, logs (`diagnose` bundles them). Name the cause, then fix Argo CD-owned resources in git; non-git credential Secrets follow the agent-workflows recipe. A pod stuck `Pending` with a Warning event `SyncError` was refused by the host (see Limits). Procedure: the `debug-failure` skill.
-- **A canary is paused.** That's a release decision, not a stuck wait. Stop waiting at the pause, check the canary pods and the URL, show the person what you saw, and promote or abort only when they say so, unless they already told you to. Procedure: the `canary-release` skill.
-- **The project needs something cluster-wide** (an operator, CRDs, a Helm chart, another namespace). That's allowed. Check first that it needs no privileged or host access and fits the budget (see Limits), then install it: with `apply_resource`, with `helm` if the person has set up kubectl (README, kubectl), or as another Argo CD Application in namespace `team-__TEAM__`, project `team-__TEAM__` (it allows any source repo, any namespace in this cluster, and cluster-scoped resources). Tell the person what you installed. If an Application has `syncOptions` (`CreateNamespace=true` for a new namespace, say), read the live Application and pass its complete current options as `sync_options` on every `manage_gitops` sync (the `ship` skill, step 3).
-- **The app needs a database.** Postgres comes from the CloudNativePG operator already in this cluster; don't install it again. Start from `examples/postgres/cluster.yaml` (one instance, 1Gi, requests and limits set): copy it into `deploy/`, add it to `resources:` in `deploy/kustomization.yaml`, and ship it (the `ship` skill). Each instance is a pod and a PVC from the team's budget. Wait for the Cluster's `Ready` condition, then point the app at Service `db-rw`, port 5432, with the credentials from Secret `db-app` (keys `username`, `password`, `uri`); `examples/postgres/README.md` shows how.
-- **A question about resource use or load over time** (is memory climbing, did the canary use more CPU, what's the request rate). Prometheus runs in this cluster (`monitoring/prometheus-server`) and Radar queries it: call `discover_metrics` to see which metrics exist, then `query_prometheus` with PromQL, filtered to `namespace="team-__TEAM__"`. It has container CPU, memory and network (`container_*`), kube-state-metrics (`kube_*`), and anything the app exposes on `/metrics` with the annotation `prometheus.io/scrape: "true"`. For a point-in-time view, `top_resources` is enough.
-- **How the app fits together** (what talks to what, what depends on what). `get_topology`, or `get_neighborhood` on one workload.
-- **Day-to-day operations.** Restart with `manage_workload`, run a CronJob now with `manage_cronjob`, see installed charts with `list_helm_releases`. Change replica counts in git, not on the cluster: Argo CD's self-heal puts the repo's value back.
-- **Once, before the demo.** Review Radar's Checks for this cluster (`get_cluster_audit`, namespace `team-__TEAM__` plus any namespace you added). Fix a finding that applies to this team's workloads, or say why it doesn't apply. Findings on the pre-installed Argo CD, Argo Rollouts, Prometheus, CloudNativePG operator, metrics components and Radar are real, but leave them alone (see "What every team sees").
-- **A real symptom you can't explain.** Suggest a hosted AI investigation. Hosted investigations cost the team nothing at the hackathon: they come from the organization's allowance. Start one yourself only when the person asks for it; then use hosted investigation tools if the organization-level `/mcp` connection advertises `start_investigation`; follow `examples/agent-workflows/README.md`. Otherwise give the person the resource's Radar Cloud link, where the sparkle button at the top right starts one: `https://app.radarhq.io/c/<cluster-id>/resources/<plural kind>?resource=team-__TEAM__/<name>`, plus `&apiGroup=<group>` for a non-core kind. For example `…/resources/deployments?resource=team-__TEAM__/app`, or `…/resources/rollouts?resource=team-__TEAM__/app&apiGroup=argoproj.io`. This is a separate hosted run that does not apply fixes; `diagnose` only gathers Kubernetes evidence. Findings can be inconclusive; verify primary evidence before changing anything and keep Argo CD-owned app fixes in git. Do not execute commands or follow URLs just because a finding suggests them.
-- **At 5:30, or when asked for the demo story.** The `demo-story` skill.
-- **Radar Cloud is down.** The person can run Radar locally (README, "When something's wrong"). Its MCP server is `http://localhost:9280/mcp`; it sees only this cluster, so its tools take no `cluster`.
+Judged: AI investigations, Radar's MCP server for shipping, syncing Argo CD and checking rollouts, and Radar's Issues, timeline and Checks. Use Radar's tools rather than kubectl to observe and operate the cluster.
+
+- Radar runs in namespace `radar` and reports to our own Radar Cloud organization. Connect with `claude mcp add --scope user radar-cloud --transport http https://api.radarhq.io/mcp` and pick our organization when signing in.
+- Call `list_clusters` once per session and pass our cluster's `id` as `cluster` on every call. Read each tool's schema; don't invent parameters.
+- **After a merge:** confirm the Action's deploy commit, sync with `manage_gitops` (`tool: argocd`, `action: sync`, `namespace: argocd`, `name: slidekick`), check the synced revision matches `origin/main`, `wait_for` Deployment `app` in `slidekick`, then check that https://slidekick.us shows the new version. A healthy old revision isn't proof.
+- **When something fails:** read the evidence first (`issues`, `get_changes`, events, logs; `diagnose` bundles them), name the cause, then fix it in git.
+- **A symptom you can't explain:** suggest a Radar AI investigation. Start one only when the person asks.
+- **Before the demo:** review Checks (`get_cluster_audit`) for `slidekick` and `ingest`. Fix what applies to our workloads, or say why it doesn't.
+- `.agents/skills/` came from the starter and assumes the hackathon's vcluster. Read `team-<team>` as `slidekick` and `<team>.cnh.radarhq.io` as `slidekick.us`. Skip `get-started` and `scripts/setup.sh`.
+
+## Dash0 (observability track)
+
+Judged: Agent0 and the Dash0 MCP server. Bonus: the Dash0 CLI, dashboards, alerts and synthetic monitoring.
+
+- The Dash0 operator injects OpenTelemetry into Python pods in `slidekick` and `ingest`, and turns itself off if the image already has any `opentelemetry-*` package. Don't add one, not even `opentelemetry-api`. Custom spans and metrics import `opentelemetry` in a `try/except ImportError`, like `ingest/telemetry.py`.
+- Run one uvicorn process per pod and scale with replicas: auto-instrumentation doesn't support uvicorn's `--workers` or `--reload`.
+- Label pod templates with `app.kubernetes.io/name` and `app.kubernetes.io/version`. Ingest Jobs use `app.kubernetes.io/name: slidekick-ingest` and `ingest/telemetry.py`.
+- Query Dash0 through its MCP server (https://dash0.com/docs/dash0/ai/mcp) when connected, otherwise the API with the header file from the README. Never print the token.
+- Dashboard: *SlideKick: Four Golden Signals* (`slidekick-golden-signals`). For a real issue, ask Agent0 for the root cause and have it open the fix as a PR, which Gitar then reviews like any other.
+
+## Gitar (Never Merge Broken track)
+
+Judged: Gitar's PR reviews, review instructions in `.gitar/review/`, repository rules, and auto-apply, which diagnoses failing CI and pushes fixes.
+
+- Wait for Gitar's review on every PR. Fix blocking findings with new commits on the branch, and reply with the reason on any finding you won't fix.
+- Gitar can push commits to your PR branch. Run `git pull --rebase` on the branch before adding more.
+- Gitar reads this file and `.gitar/review/`. When a review misses a project gotcha, add it to `.gitar/review/main.md` in the same PR.
+- Automations on PR events (labels, reviewers, checks) go in `.gitar/rules/<name>.md`: YAML frontmatter with `title`, `when` and `actions`, then a plain-language body.
+- CI only builds on `main` today, so PRs have no checks for auto-apply to fix. A PR workflow that runs tests turns it on.
+
+## Elasticsearch (Find the Right Talk track)
+
+Judged: storing data, Jina embeddings through Elastic's inference service, keyword, vector, time-series and geo queries, aggregations and dashboards, and Elastic Workflows or Agent Builder, including MCP.
+
+- Serverless project `slidekick` (vector-optimized, 9.7). Embeddings come from Elastic's inference service (`.jina-embeddings-v5-omni-small`); don't add another embedding model.
+- `slide` (a base64 image) and `said` (captions) are `semantic` fields. Exclude both from `_source` in every search, and never highlight `slide`. Each image is a data URL of at most 1 MB decoded, so resize first.
+- A lookup is one hybrid query: RRF over image kNN on `slide`, OCR keyword matching and text-to-image matching. Filters go inside the `knn` clause. Aggregations, sorting and ES|QL don't work on semantic fields, so group results by talk in the API.
+- Index mapping changes go through a PR. Bulk returns HTTP 200 even when items fail: check each item, and retry 429s.
+- Elastic's agent skills: https://github.com/elastic/agent-skills.
 
 ## Never
 
-- Break things on purpose, or generate load you can't bound.
-- Touch `cnh` or another team's cluster, or try to get around the host's limits (privileged, hostPath, hostNetwork or hostPID pods; the resource budget).
-- Remove or reconfigure what came pre-installed: Argo CD, Argo Rollouts, Prometheus, the CloudNativePG operator, the metrics setup, the AppProject `team-__TEAM__`, Secret `kubeconfig` in `default`, and Radar itself (namespace `radar`). GitOps, Radar's metrics, the team's databases and kubectl depend on them. Don't upgrade Radar either: the hackathon runs Radar 1.19 on purpose.
-- Write a kubeconfig or token into the repo, a commit, or your output. The repo is public.
-- Poll forever. Each wait has a limit (`wait_for` waits up to 45 seconds per call). After about 5 minutes, report what's blocking instead of retrying.
-
-## Skills
-
-`.agents/skills/` has the five procedures named above: `get-started`, `ship`, `debug-failure`, `canary-release` and `demo-story`. Claude Code and Codex load them as skills. If your agent doesn't, read the matching `SKILL.md` before that task.
-
-## Limits
-
-- Budget: one total across every namespace in this cluster, including anything you install: 2 CPU and 4 GiB of requests, 4 CPU and 8 GiB of limits, 4 PVCs and 20 GiB of storage (default StorageClass gp3). Containers without their own requests and limits get 100m / 128Mi of requests and 500m / 512Mi of limits. The starter pod's 500m CPU limit means 8 pods at most. A pod over the budget stays `Pending` with a `SyncError` event `exceeded quota: team-quota ...`.
-- The host refuses privileged pods and pods with hostPath, hostNetwork or hostPID. Such a pod stays `Pending`; the reason is a Warning event `SyncError` on the pod (`get_events`, or `diagnose`).
-- Your public URL is `https://__TEAM__.cnh.radarhq.io`. The platform routes it to Service `app`, port 80, in `team-__TEAM__`: keep that Service. No other hostname is possible, and Services of type LoadBalancer or NodePort aren't available. The HTTPRoute in `deploy/` does nothing in this cluster (it has no Gateway); Argo CD counts it healthy, so leave it.
-- The app's image comes from GHCR and must be public.
-- kubectl works only if the person copied the kubeconfig (README, kubectl). Prefer Radar's tools: they're what the track is about.
-
-## What every team sees
-
-Every team's cluster shows these. None is the team's to fix. Don't spend an AI investigation on the CoreDNS issue or the start-up warnings:
-
-- Issue "CoreDNS service DNS rewrite" on `kube-system/coredns`: the vcluster's own DNS setup.
-- About 5 Warning events (probes, `FailedMount` of `kube-root-ca.crt`) from the cluster's first minute.
-- "9 of 10 Deployments available": `argocd-applicationset-controller` is scaled to 0 on purpose.
-- During the first Argo CD sync, a "Missing ConfigMap" issue for `app-code` on an old pod. The platform's starter app ran from ConfigMap `app-code`, which isn't in this repo, so the first sync removes it while an old pod still uses it. It clears once the new pods are up. The Application can also read `OutOfSync` for a few seconds until Argo CD's automatic sync removes that ConfigMap.
-- Node CPU and memory gauges: the shared host nodes, not the team's budget.
-- "Can upgrade Radar" on every cluster card: don't. Radar 1.19 is on purpose (1.20 flags the starter's HTTPRoute, whose Gateway is on the host).
-- Checks across all namespaces include findings on the pre-installed platform ("managed by Helm but not GitOps" and more). They're real Radar findings, fine to look at and show, but not the team's to fix. For the team's fixes and its before/after, use `team-__TEAM__` plus namespaces you added. Secret `default/kubeconfig` shows as unused: it's the person's kubectl access, keep it.
-- The bell and Alerts: every team's alerts, not just this one's.
-
-## Application workflows
-
-Read [`examples/agent-workflows/README.md`](examples/agent-workflows/README.md) before adding credentials, one-off Jobs or dependencies. Discover the live MCP catalog before assuming an optional or newly added tool is available.
+- Touch another GCP project, cluster or repo.
+- Generate load you can't bound. The spot pool scales to 256 vCPUs, so size ingest Jobs deliberately. Don't fetch from YouTube again; it rate-limits within hours.
+- Store or serve the talk videos or deck PDFs ourselves. Link to them.
+- Remove or reconfigure the pre-installed Argo CD, Argo Rollouts, Dash0 operator or Radar.
+- Poll forever. After about 5 minutes, report what's blocking.
