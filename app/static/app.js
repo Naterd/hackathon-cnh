@@ -234,6 +234,7 @@ async function lookup(photo) {
       await deletePhoto(photo.id);
       return "Couldn't read that photo. Try another.";
     }
+    if (response.status === 429) return "Saved to your roll. That's a lot of photos at once: tap Retry on the roll in a minute.";
     if (!response.ok) return "Saved to your roll. Search isn't answering, so it'll try again later.";
     const { talks } = await response.json();
     if (!talks.length) {

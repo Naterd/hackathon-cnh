@@ -6,6 +6,7 @@ on:
       - app/**
       - Dockerfile
       - tests/app_smoke.py
+      - tests/fairshare_test.py
       - .github/workflows/app-ci.yaml
   workflow_dispatch:
 permissions:
@@ -24,5 +25,8 @@ jobs:
       - name: Smoke test
         working-directory: app
         run: python ../tests/app_smoke.py
+      - name: Sessions and fair share
+        working-directory: app
+        run: python ../tests/fairshare_test.py
       - name: Build the image
         run: docker build --build-arg APP_VERSION=ci -t slidekick-app:ci .

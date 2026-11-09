@@ -12,7 +12,14 @@ from fastapi.responses import PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import fairshare
 import search
+
+# The Dash0 operator injects the OpenTelemetry SDK in the pod. Without it (locally), no spans.
+try:
+    from opentelemetry import trace
+except ImportError:
+    trace = None
 
 HERE = Path(__file__).parent
 
@@ -39,6 +46,24 @@ templates.env.globals["version"] = os.environ.get("APP_VERSION", "dev")
 # Ingest-only Dash0 token for browser monitoring, from Secret app-credentials. It ends up in the page.
 templates.env.globals["dash0_web_token"] = os.environ.get("DASH0_WEB_TOKEN")
 
+# Set only on these, not on /static or /api/slide, which a shared cache may keep.
+SESSION_PATHS = {"/", "/api/lookup"}
+
+
+@app.middleware("http")
+async def session(request: Request, call_next):
+    request.state.session, new = fairshare.session_id(request.cookies.get(fairshare.COOKIE))
+    if trace:
+        # So Dash0 can show one visitor's requests. The id is random and holds nothing personal.
+        trace.get_current_span().set_attribute("slidekick.session", request.state.session)
+    response = await call_next(request)
+    if new and request.url.path in SESSION_PATHS:
+        response.set_cookie(
+            fairshare.COOKIE, request.state.session, max_age=fairshare.COOKIE_MAX_AGE,
+            httponly=True, secure=True, samesite="lax",
+        )
+    return response
+
 
 @app.get("/healthz", response_class=PlainTextResponse)
 @app.get("/readyz", response_class=PlainTextResponse)
@@ -63,6 +88,12 @@ def service_worker(request: Request):
 
 @app.post("/api/lookup")
 async def lookup(request: Request):
+    try:
+        fairshare.admit(request.state.session, fairshare.client_ip(request))
+    except fairshare.Limited as e:
+        log.warning("Lookup limited: too many from one visitor")
+        raise HTTPException(429, "Too many photos at once", headers={"Retry-After": str(e.retry_after)})
+
     photo = bytearray()
     async for chunk in request.stream():
         photo += chunk
@@ -72,7 +103,11 @@ async def lookup(request: Request):
         raise HTTPException(400, "Send the photo as the request body")
 
     try:
-        return await call(search.lookup, bytes(photo))
+        async with fairshare.turn(request.state.session):
+            return await call(search.lookup, bytes(photo))
+    except fairshare.Busy:
+        log.warning("Lookup busy: no free slot in %ss", fairshare.WAIT_SEC)
+        raise HTTPException(503, "Search is busy. Try again in a moment.")
     except search.BadPhoto:
         raise HTTPException(400, "That isn't an image we can read")
 
