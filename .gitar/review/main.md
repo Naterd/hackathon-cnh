@@ -47,7 +47,7 @@ Report these as blocking review findings.
 
 - Style, naming, formatting, docstrings, type hints or missing tests, unless the gap hides a real bug.
 - Refactors or abstractions "for later". This code lives for a day.
-- Placeholders in starter files (`__TEAM__`, `OWNER/REPO`) and anything under `examples/`.
+- Placeholders (`__TEAM__`, `OWNER/REPO`) in docs and anything under `examples/`. In `deploy/` and `argocd/` they are a bug: the app must deploy to `slidekick`, ingest Jobs to `ingest`, and nothing may reference the hackathon's `cnh` gateway.
 - Project ids, bucket names, the domain or the static IP in docs and scripts. They're public on purpose and aren't secrets.
 - Findings on the pre-installed Argo CD, Argo Rollouts or Dash0 operator.
 - Unpinned GitHub Action tags such as `@v5`.
