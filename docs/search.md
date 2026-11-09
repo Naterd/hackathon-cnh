@@ -121,7 +121,8 @@ A second index for the extras that need no embeddings. It has the same ids as `k
 | `sched_url` | talk | The session's Sched page |
 | `thumb` | still | A 320 px JPEG, base64 without a prefix, 6–10 KB: `<img src="data:image/jpeg;base64,{thumb}">` |
 | `slide_title` | still | The slide's biggest line of text near the top, for labels and alt text. It's empty for title cards and slides without a clear title. |
-| `n`, `start_sec` | still | The slide's order and second, for the deck strip |
+| `n`, `start_sec`, `end_sec`, `url`, `title`, `speakers_text` | still | The same values as in `kubecon-moments`, so a hit here builds a result without a second fetch |
+| `fp` | still | A 576-number pixel fingerprint (32×18 grayscale, mean-centred, unit length) for a native kNN leg that needs no inference. `fingerprint()` in `ingest/details.py` defines it, and the query side must compute it the same way. Blank stills have none. Exclude it from `_source`. |
 
 ```json
 GET kubecon-details/_mget
