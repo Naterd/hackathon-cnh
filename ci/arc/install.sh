@@ -28,7 +28,7 @@ gcloud storage buckets add-iam-policy-binding "gs://$CNH_BUCKET" --member="$ci" 
 gcloud storage buckets add-iam-policy-binding "gs://$CNH_BUCKET" --member="$ci" --role=roles/storage.objectUser \
   --condition="title=ci-writes,expression=resource.name.startsWith('$objs/derived/ci/') || resource.name.startsWith('$objs/eval/')" >/dev/null
 
-# CI's Elasticsearch key: it can read the live index and write only kubecon-moments-ci. An API key can't
+# CI's Elasticsearch key: it can read the live index and kubecon-details, and write only kubecon-moments-ci. An API key can't
 # create a key with privileges, so make it in Kibana: API keys > Create, expire in 14 days, turn on
 # "Control security privileges", paste es-ci-key.json. Copy the encoded key, then re-run this script.
 if ! kubectl -n ingest-ci get secret elastic >/dev/null 2>&1; then
