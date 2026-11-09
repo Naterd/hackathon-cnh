@@ -33,3 +33,11 @@ Nov 9, 12:35 MT. A Radar Issue flagged Job `ingest/ingest-extract-ci` (a 4-talk 
 - 19:34:08 the container starts, after a 16 s pull of the 368 MB ingest image.
 
 **What we learned:** each new spot node costs about 95 s before a pod on it runs: scale-up, then CSI driver registration, then image pulls. At 2 CPU per pod, an e2-standard-8 fits 3 pods. **Decision for the V2 run:** to be made. Either right-size the CPU request so more pods fit per node, or pre-scale the spot pool before fanning out.
+
+### Follow-up: steering the investigation (12:42 MT)
+
+We asked it to check the pods' events, not only the Job's. It revised its finding: "A new spot node's boot, storage-driver registration, and image pulls delayed pod index 3 by about 95 seconds", certainty "likely", confidence 0.85. That matches the pod events above. Its fix was to pre-scale the ingest pool and turn on GKE Image Streaming. **We checked:** Image Streaming is off on the `ingest` pool, and it only works for Artifact Registry images, while ours come from GHCR. So the change we're keeping is pre-scaling the spot pool before V2.
+
+## After
+
+PR "Fix Radar Checks findings for the app": a PodDisruptionBudget (`minAvailable: 1`), `automountServiceAccountToken: false`, and a soft `topologySpreadConstraints` for Deployment `app`. Run Radar Checks again for `slidekick` once it has synced.

@@ -19,6 +19,16 @@ spec:
         app.kubernetes.io/name: slidekick
         app.kubernetes.io/part-of: slidekick
     spec:
+      # The app never calls the Kubernetes API.
+      automountServiceAccountToken: false
+      # Soft: the default pool can be a single node.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: app
       containers:
         - name: app
           image: app
