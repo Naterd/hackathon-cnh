@@ -1,6 +1,7 @@
 """Extras the app needs that involve no embeddings, in their own index, kubecon-details.
 
-Per still: a 320 px thumbnail for the deck strip, and the slide's title for labels and alt text.
+Per still: a 320 px thumbnail for the deck strip, the slide's title for labels and alt text, and `fp`, a tiny
+pixel fingerprint the lookup matches with native kNN (no inference), plus what a result needs (time, url, title).
 Per talk: the Sched slot and room, structured speakers, a clean title and the deck links (ingest/sched.py).
 Ids match kubecon-moments (<vid>-NNN, <vid>-talk), so the app fetches extras with one _mget.
 Why not add these fields to kubecon-moments: any update there re-runs inference on the whole document,
@@ -20,6 +21,8 @@ import sys
 import time
 from pathlib import Path
 
+import cv2
+import numpy as np
 from PIL import Image
 
 from index import ES, log
@@ -28,8 +31,12 @@ THUMB_PX, THUMB_QUALITY = 320, 70
 LOGO = re.compile(r"kube|cloudnat|nativecon|america|20\d\d", re.I)  # the event logo in a slide's top corner
 MAPPINGS = {"properties": {
     "source": {"type": "keyword"}, "event": {"type": "keyword"}, "talk_id": {"type": "keyword"},
-    "n": {"type": "integer"}, "start_sec": {"type": "float"},
+    "n": {"type": "integer"}, "start_sec": {"type": "float"}, "end_sec": {"type": "float"},
+    "url": {"type": "keyword", "index": False}, "title": {"type": "text"}, "speakers_text": {"type": "text"},
     "thumb": {"type": "binary"}, "slide_title": {"type": "text"},
+    # unit length, so dot_product; plain float HNSW: at 12k vectors quantizing buys nothing
+    "fp": {"type": "dense_vector", "dims": 576, "similarity": "dot_product", "index": True,
+           "index_options": {"type": "hnsw"}},
     "title_clean": {"type": "text", "fields": {"raw": {"type": "keyword", "ignore_above": 512}}},
     "starts_at": {"type": "date"}, "ends_at": {"type": "date"},
     "room": {"type": "keyword"}, "track": {"type": "keyword"},
@@ -96,6 +103,33 @@ def thumbs(a):
         f"thumbs {sum(len(s['thumb']) for s in stills) * 3 // 4 // max(1, len(stills)) // 1024} KB each")
 
 
+def fingerprint(path):
+    """32x18 grayscale, mean-centred, unit length: a pixel match for the lookup that needs no inference.
+    docs/search_example.py must compute it the same way. None for a blank still (no direction to compare)."""
+    bgr = cv2.imdecode(np.fromfile(str(path), np.uint8), cv2.IMREAD_COLOR)
+    g = cv2.resize(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), (32, 18), interpolation=cv2.INTER_AREA).astype(np.float32).ravel()
+    g -= g.mean()
+    norm = np.linalg.norm(g)
+    return None if norm < 1.0 else (g / (norm + 1e-6)).round(6).tolist()
+
+
+def talk_frames(talk_dir, event):
+    vid = talk_dir.name
+    talk = json.loads((talk_dir / "talk.json").read_text())
+    segs = {s["n"]: s for s in json.loads((talk_dir / "segments.json").read_text())}
+    docs = []
+    for s in json.loads((talk_dir / "details.json").read_text())["stills"]:
+        seg = segs[s["n"]]
+        doc = {"source": "frame", "event": event, "talk_id": vid, **s, "end_sec": seg["end"],
+               "url": f"https://youtu.be/{vid}?t={int(seg['start'])}",  # as index.py builds it
+               "title": talk["title"], "speakers_text": talk["speakers_text"]}
+        fp = fingerprint(talk_dir / seg["still"])
+        if fp:
+            doc["fp"] = fp
+        docs.append((f"{vid}-{s['n']:03d}", doc))
+    return docs
+
+
 def load(a):
     es = ES()
     status, _ = es.call("HEAD", f"/{a.index}")
@@ -104,24 +138,34 @@ def load(a):
         if status != 200:
             sys.exit(f"create {a.index}: HTTP {status} {str(body)[:300]}")
     sched = json.loads(Path(a.sched).read_text()) if a.sched and Path(a.sched).exists() else {}
-    docs = [(f"{vid}-talk", {"source": "talk", "event": a.event, "talk_id": vid, **s}) for vid, s in sched.items()]
-    for f in sorted(Path(a.derived).glob("*/details.json")):
-        talk = json.loads(f.read_text())
-        docs += [(f"{talk['talk_id']}-{s['n']:03d}", {"source": "frame", "event": a.event, "talk_id": talk["talk_id"], **s})
-                 for s in talk["stills"]]
-    failed = 0
-    for i in range(0, len(docs), 500):
+    loaded = failed = 0
+
+    def send(docs):
+        nonlocal loaded, failed
         lines = []
-        for _id, doc in docs[i:i + 500]:
+        for _id, doc in docs:
             lines += [json.dumps({"index": {"_index": a.index, "_id": _id}}), json.dumps(doc)]
         status, r = es.call("POST", "/_bulk", ("\n".join(lines) + "\n").encode(), ndjson=True)
         if status != 200:
             sys.exit(f"bulk: HTTP {status} {str(r)[:300]}")
         errs = [it["index"]["error"] for it in r["items"] if "error" in it["index"]]
-        failed += len(errs)
+        loaded, failed = loaded + len(docs) - len(errs), failed + len(errs)
         if errs:
             log(f"bulk errors, first: {str(errs[0])[:300]}")
-    log(f"loaded {len(docs) - failed}/{len(docs)} docs into {a.index}: {len(sched)} talks with Sched data")
+
+    send([(f"{vid}-talk", {"source": "talk", "event": a.event, "talk_id": vid, **s}) for vid, s in sched.items()])
+    talks = sorted(f.parent for f in Path(a.derived).glob("*/details.json"))
+    batch = []
+    with cf.ThreadPoolExecutor(16) as ex:  # reading stills through gcsfuse is the slow part
+        for docs in ex.map(talk_frames, talks, [a.event] * len(talks)):
+            batch += docs
+            if len(batch) >= 300:
+                send(batch)
+                batch = []
+    if batch:
+        send(batch)
+    log(f"loaded {loaded}/{loaded + failed} docs into {a.index}: {len(sched)} talks with Sched data, "
+        f"stills from {len(talks)} talks")
     if failed:
         sys.exit(1)
 

@@ -116,7 +116,7 @@ A second index for the extras that need no embeddings. It has the same ids as `k
 | `starts_at`, `ends_at` | talk | The 2024 slot, ISO time with the Mountain Time offset, for example `2024-11-13T15:25:00-07:00` |
 | `room` | talk | For example `Salt Palace \| Level 3 \| 355 E` |
 | `track` | talk | Sched's category, for example `Maintainer Track` |
-| `speakers` | talk | `[{"name", "position", "company"}]`, from each speaker's Sched profile |
+| `speakers` | talk | `[{"name", "position", "company"}]`, from each speaker's Sched profile. Where Sched has no profiles (some lightning talks), names come from the session title and `position` is empty. |
 | `decks` | talk | `[{"name", "url"}]`: the slides uploaded to Sched. Link to them; never serve the PDFs. |
 | `sched_url` | talk | The session's Sched page |
 | `thumb` | still | A 320 px JPEG, base64 without a prefix, 6–10 KB: `<img src="data:image/jpeg;base64,{thumb}">` |
@@ -134,7 +134,7 @@ POST kubecon-details/_search
 
 The second query is the deck strip: a whole talk's thumbnails in one request, about 300 KB for 32 slides.
 
-Talks that Sched doesn't list (some keynotes and sponsored sessions) have no talk document here. Fall back to `title` and `speakers_text` from `kubecon-moments`.
+Coverage: 361 of the 370 talks have Sched data, 315 of them with speakers and 206 with a deck. The other nine are the daily highlight reels and a few co-located-event talks that aren't on this Sched; they have no talk document here, so fall back to `title` and `speakers_text` from `kubecon-moments`. To refresh: `ingest/sched.py` writes the JSON to `gs://<bucket>/derived/sched/kubecon-na-2024.json`, then `ingest/run.sh details` reloads the index.
 
 ## Not in the index yet
 
