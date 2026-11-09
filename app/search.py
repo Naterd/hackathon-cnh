@@ -7,9 +7,21 @@ import json
 import logging
 import os
 import threading
+import time
 import urllib.request
+from contextlib import nullcontext
 
 from PIL import Image, ImageOps
+
+try:  # The API only; the Dash0 operator injects the SDK. Without it every call is a no-op.
+    from opentelemetry import trace
+except ImportError:
+    trace = None
+_tracer = trace.get_tracer("slidekick.lookup") if trace else None
+
+
+def _span(name):
+    return _tracer.start_as_current_span(name) if _tracer else nullcontext()
 from rapidocr_onnxruntime import RapidOCR
 
 INDEX = "kubecon-moments"  # alias; points at the current index version
@@ -71,10 +83,13 @@ def prepare(photo):
 
 
 def lookup(photo, size=50):
-    image, jpeg = prepare(photo)
-    with ocr_lock:
-        result, _ = ocr(jpeg)
+    start = time.perf_counter()
+    with _span("lookup.ocr"):
+        image, jpeg = prepare(photo)
+        with ocr_lock:
+            result, _ = ocr(jpeg)
     text = " ".join(r[1] for r in result or [])
+    ocr_done = time.perf_counter()
 
     # No filter on the kNN leg: only stills have `slide`, and a filter there made the query
     # 3-6x slower. If one is ever needed, it goes inside the knn clause.
@@ -96,7 +111,9 @@ def lookup(photo, size=50):
         "retriever": {"rrf": {"retrievers": retrievers, "rank_window_size": 100}}  # >= size
         if len(retrievers) > 1 else retrievers[0],
     }
-    hits = es("POST", f"/{INDEX}/_search", body)["hits"]["hits"]
+    with _span("lookup.search"):
+        hits = es("POST", f"/{INDEX}/_search", body)["hits"]["hits"]
+    search_done = time.perf_counter()
 
     # Semantic fields don't aggregate, so group by talk here. RRF scores sit close together;
     # summing them per talk is what separates the talks.
@@ -106,7 +123,29 @@ def lookup(photo, size=50):
         t = talks.setdefault(s["talk_id"], {"talk_id": s["talk_id"], **names(s), "score": 0.0, "moments": []})
         t["score"] += h["_score"]
         t["moments"].append({"id": h["_id"], "n": s["n"], "start_sec": s["start_sec"], "url": s["url"]})
-    return {"talks": sorted(talks.values(), key=lambda t: t["score"], reverse=True)[:3]}
+    top = sorted(talks.values(), key=lambda t: t["score"], reverse=True)[:3]
+    return {"talks": top, "meta": _observe(top, start, ocr_done, search_done)}
+
+
+def _observe(top, start, ocr_done, search_done):
+    """Timings and the trace ID for the results page; the match on the request's span."""
+    meta = {
+        "ocr_ms": round(1000 * (ocr_done - start)),
+        "search_ms": round(1000 * (search_done - ocr_done)),
+        "total_ms": round(1000 * (time.perf_counter() - start)),
+    }
+    if trace:
+        span = trace.get_current_span()
+        ctx = span.get_span_context()
+        if ctx.is_valid:
+            meta["trace_id"] = format(ctx.trace_id, "032x")
+        if top:
+            span.set_attribute("slidekick.match.talk_id", top[0]["talk_id"])
+            span.set_attribute("slidekick.match.score", top[0]["score"])
+            # The gap to the runner-up is the confidence: a close second means a coin flip.
+            span.set_attribute("slidekick.match.gap", top[0]["score"] - (top[1]["score"] if len(top) > 1 else 0.0))
+        span.set_attribute("slidekick.match.talks", len(top))
+    return meta
 
 
 def names(source):
