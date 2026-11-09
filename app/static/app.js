@@ -122,12 +122,15 @@ function stopCamera() {
 // Which way is up, in degrees clockwise from the top of the screen: 0, 90, 180 or -90. With auto-rotate
 // off, the page and the camera frame stay portrait when the phone is turned, so the slide would go to the
 // server sideways. Gravity says how the phone is held; the shutter turns the photo back upright and the
-// aim brackets and hint turn to match. It changes only once the phone is 15° past the diagonal, so it
-// doesn't flicker at 45°, and not while the phone lies flat, when x and y say nothing.
+// aim brackets and hint turn to match. Gravity is in the phone's own frame, so the screen's rotation is
+// taken off: with auto-rotate on, the page and the camera have already turned, and the turn stays 0.
+// It changes only once the phone is 15° past the diagonal, so it doesn't flicker at 45°, and not while
+// the phone lies flat, when x and y say nothing.
 let turn = 0;
 function onMotion({ accelerationIncludingGravity: g }) {
   if (!g || Math.hypot(g.x, g.y) < 4) return;
-  const angle = (Math.atan2(g.x, g.y) * 180) / Math.PI; // 0 upright, 90 turned counterclockwise
+  const held = (Math.atan2(g.x, g.y) * 180) / Math.PI; // 0 upright, 90 turned counterclockwise
+  const angle = ((held - (screen.orientation?.angle ?? 0)) % 360 + 540) % 360 - 180; // -180 to 180
   const nearest = Math.round(angle / 90) * 90;
   if (Math.abs(angle - nearest) < 30) setTurn(nearest === -180 ? 180 : nearest);
 }
