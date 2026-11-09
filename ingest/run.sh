@@ -77,7 +77,9 @@ ship_code() {
   kubectl -n $NS create configmap "ingest-code" --from-file=extract.py --from-file=index.py \
     --from-file=telemetry.py --from-file=eval.py --from-file=details.py --from-file=../docs/search_example.py \
     --from-file=../docs/layout-kubecon-na-2024.png --from-file=requirements.txt \
-    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    --dry-run=client -o yaml | kubectl apply --server-side --force-conflicts -f - >/dev/null
+  # Server-side: a client-side apply copies the whole object into an annotation, which is capped at
+  # 262144 bytes, and the layout image alone is 400 KB as base64.
 }
 
 case $cmd in
