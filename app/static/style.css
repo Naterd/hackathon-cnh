@@ -174,7 +174,7 @@ main { position: relative; flex: 1; min-height: 0; }
 .hero.has-slide .hero-photo { inset: auto 10px 10px auto; width: 84px; height: 63px; object-fit: cover; border: 2px solid var(--color-bg); box-shadow: var(--shadow-lg); }
 /* Tap the inset to swap: your photo fills the frame and the slide becomes the inset, so you can flick between them. */
 .hero.has-slide.swapped .hero-photo { inset: 0; width: 100%; height: 100%; object-fit: contain; border: 0; box-shadow: none; }
-.hero.has-slide.swapped .hero-slide { position: absolute; z-index: 1; inset: auto 10px 10px auto; width: 84px; height: 63px; object-fit: cover; border: 2px solid var(--color-bg); box-shadow: var(--shadow-lg); animation: none; }
+.hero.has-slide.swapped .hero-slide { position: absolute; z-index: 1; inset: auto 10px 10px auto; width: 84px; height: 63px; object-fit: cover; border: 2px solid var(--color-bg); box-shadow: var(--shadow-lg); }
 .hero-swap { display: none; position: absolute; z-index: 2; inset: auto 4px 4px auto; width: 96px; height: 75px; padding: 0; border: 0; background: none; cursor: zoom-in; }
 .hero.has-slide .hero-swap { display: block; }
 .hero.swapped .hero-swap { cursor: zoom-out; }

@@ -489,8 +489,7 @@ function renderStrip(slides, moment) {
 // The inset in the hero's corner swaps places with the big picture: your photo or the matched slide.
 function swapHero(on) {
   $("hero-slide").parentElement.classList.toggle("swapped", on);
-  $("hero-swap").setAttribute("aria-pressed", on);
-  $("hero-swap").ariaLabel = on ? "Show the matched slide full size" : "Show your photo full size";
+  $("hero-swap").setAttribute("aria-pressed", on); // the label stays put; aria-pressed carries the state
 }
 $("hero-swap").onclick = () => swapHero(!$("hero-slide").parentElement.classList.contains("swapped"));
 
