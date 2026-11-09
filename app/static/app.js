@@ -414,7 +414,8 @@ function renderMatch(photo) {
   $("hero-photo").src = photoURL(photo);
   slide.onload = () => hero.classList.add("has-slide");
   slide.src = `/api/slide/${moment.id}`;
-  slide.alt = `Slide ${moment.n + 1} of the talk` + (moment.ocr_text ? `. On the slide: ${moment.ocr_text}` : ", as it appears in the recording");
+  const ocr = (moment.ocr_text || "").trim();
+  slide.alt = `Slide ${moment.n + 1} of the talk` + (ocr ? `. On the slide: ${ocr.length > 200 ? ocr.slice(0, 200).replace(/\s+\S*$/, "") + "…" : ocr}` : ", as it appears in the recording");
   if (slide.complete && slide.naturalWidth) slide.onload();
 
   $("match-tag").textContent = `Matched · slide ${moment.n + 1}`;

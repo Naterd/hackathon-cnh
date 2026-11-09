@@ -29,7 +29,7 @@ check('id="status" aria-live="polite"' in html and "function say(" in js, "the l
 check('say(`Found it:' in js and 'say("Finding the talk' in js, "the lookup's start and result are announced")
 check('aria-busy="true"' in re.search(r'<section id="scan"[^>]*>', html).group(0), "the Finding view is aria-busy")
 check("opens YouTube in a new tab" in html, "the recording link says it opens a new tab")
-check("On the slide: ${moment.ocr_text}" in js, "the slide image's alt text is the slide's words")
+check('const ocr = (moment.ocr_text || "").trim();' in js and 'ocr.length > 200 ?' in js, "the slide image's alt text trims and limits the slide's words")
 check('id="said"' in html and "moment.said_text" in js, "what the speaker said is on the match page")
 check('"ocr_text": s.get("ocr_text"' in reference and '"said_text": s.get("said_text"' in reference,
       "the reference lookup passes ocr_text and said_text through")
