@@ -8,6 +8,8 @@ on:
       - tests/app_smoke.py
       - tests/fairshare_test.py
       - tests/observability_test.py
+      - tests/a11y_test.py
+      - docs/search_example.py
       - .github/workflows/app-ci.yaml
   workflow_dispatch:
 permissions:
@@ -34,5 +36,8 @@ jobs:
         run: |
           pip install opentelemetry-sdk==1.44.0
           python ../tests/observability_test.py
+      - name: Screen-reader wiring
+        working-directory: app
+        run: python ../tests/a11y_test.py
       - name: Build the image
         run: docker build --build-arg APP_VERSION=ci -t slidekick-app:ci .

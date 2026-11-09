@@ -33,6 +33,7 @@ let tab = "capture";
 let navigated = false;
 
 function show(name) {
+  const from = ["capture", "scan", "match", "roll", "timeline"].find((v) => !$(v).hidden);
   for (const view of ["capture", "scan", "match", "roll", "timeline"]) $(view).hidden = view !== name;
   document.querySelector('meta[name="theme-color"]').content =
     { capture: "#151618", scan: "#07191d" }[name] ?? "#f2f8f9";
@@ -43,6 +44,8 @@ function show(name) {
   }
   if (name === "capture") startCamera();
   else stopCamera();
+  // Screen readers stay on the control that started the change, which is now hidden. Take them to the new view.
+  if (navigated || name === "scan" || from === "scan") $(`${name}-title`)?.focus({ preventScroll: true });
 }
 
 async function route() {
@@ -393,9 +396,9 @@ async function openMatch(id) {
   const photo = await getPhoto(id);
   if (photo?.state !== "matched") return location.replace("#roll");
   current = photo;
+  renderMatch(photo); // before show(), so focus lands on a heading that already has the title
   show("match");
   $("match").scrollTop = 0;
-  renderMatch(photo);
 }
 
 const secs = (ms) => `${(ms / 1000).toFixed(1)} s`;
@@ -411,7 +414,7 @@ function renderMatch(photo) {
   $("hero-photo").src = photoURL(photo);
   slide.onload = () => hero.classList.add("has-slide");
   slide.src = `/api/slide/${moment.id}`;
-  slide.alt = `Slide ${moment.n + 1} of the talk, as it appears in the recording`;
+  slide.alt = `Slide ${moment.n + 1} of the talk` + (moment.ocr_text ? `. On the slide: ${moment.ocr_text}` : ", as it appears in the recording");
   if (slide.complete && slide.naturalWidth) slide.onload();
 
   $("match-tag").textContent = `Matched · slide ${moment.n + 1}`;
@@ -431,6 +434,10 @@ function renderMatch(photo) {
   $("recording-title").textContent = `Jump to ${at} in the recording`;
   $("recording-sub").textContent = "When this slide was on screen";
   $("match-note").hidden = !photo.degraded;
+  const said = (moment.said_text || "").trim();
+  $("said").hidden = !said;
+  $("said-head").textContent = `Said at ${at}`;
+  $("said-text").textContent = said.length > 400 ? said.slice(0, 400).replace(/\s+\S*$/, "") + "…" : said;
 
   const others = photo.talks.map((t, i) => [t, i]).filter(([, i]) => i !== photo.pick);
   $("others").hidden = !others.length;

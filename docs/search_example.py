@@ -348,7 +348,9 @@ def lookup(photo_bytes, event="kubecon-na-2024", size=50, index=INDEX):
         if len(t["moments"]) < 3:
             t["top3"] += score[doc_id]
         t["total"] += score[doc_id]
-        t["moments"].append({"id": doc_id, "start_sec": s["start_sec"], "end_sec": s["end_sec"], "url": s["url"]})
+        t["moments"].append({"id": doc_id, "start_sec": s["start_sec"], "end_sec": s["end_sec"], "url": s["url"],
+                             # for screen readers and captions on the match page; fingerprint hits may lack them
+                             "ocr_text": s.get("ocr_text", ""), "said_text": s.get("said_text", "")})
     # Rank talks by their best single hit, then by their best three. Summing every hit (`total`) mostly
     # counts hits, because rank scores are nearly flat: ten weak hits beat one still ranked first on every leg.
     ranked = sorted(talks.values(), key=lambda t: (t["score"], t["top3"]), reverse=True)
