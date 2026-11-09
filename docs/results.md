@@ -62,6 +62,14 @@ Two reviews asked whether the demo survives a projector: the talk on a laptop mi
 | 14:05, `projector-2` | Add the pixel fingerprint, tried first; one retry on 429 | 73% | 80% | 63.5% | 88% | 66% | 78% | 60% | 10.3 s / 15.4 s | 103 of 200 |
 | 14:11, `projector-3` | Check each placement against the layout's pixels; no retry, and a 20 s pause on inference after a 429 | **78.5%** | **86.5%** | **68%** | 90% | 82% | 82% | 60% | 1.7 s / 7.4 s | 119 of 200 |
 
+The same lookup over the whole corpus, on GKE in namespace `ingest-ci` (run `20261109-142844-7ea0778`, raw report `projector-full`): 200 photos from all 370 talks, 18 of them stage keynotes.
+
+| Time (MT) | talk@1 | talk@3 | moment | laptop screen | slide only | projector | browser window | stage keynotes | p50 / p95 latency | Throttled lookups |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 14:29 | **74.5%** | **83.5%** | **66.5%** | 92% | 82% | 76% | 48% | 50% | 3.7 s / 9.8 s | 125 of 200 |
+
+The baseline row above used the same seed with 100 photos in each of its two modes: laptop screen 47%, slide only 69%.
+
 What these runs showed:
 - **Locating the recording:** matching the fixed surround (logo, mountains, box outlines) places the video within 3% of its true corners in 97% of laptop photos, 86% of projector photos and 54% of browser-window photos, on 70 simulated photos each. `find_screen()` alone: 93%, 21%, 0%.
 - **The fingerprint carries projector photos.** At a 1280 px upload the projected slide is about 400 px wide, and OCR reads almost nothing: keywords alone found the right talk for 41% of them. The fingerprint alone, against all 12,086 stills, found 84%.
@@ -69,7 +77,8 @@ What these runs showed:
 - **False placements:** a slide's own KubeCon footer can match the logo. 14 of 60 slide-only photos were "located" wrongly, which is the drop to 66% in the second row. Correlating the flattened photo with the layout's fixed pixels separates them cleanly: right placements score 0.7–0.95, false ones below 0.
 - **Throttling shaped every row.** Elastic's inference trial limit answered HTTP 429 to most lookups at 4 in parallel, after 4–6 s each. More than half of each run's answers came from keywords and the fingerprint alone. Retrying cost 16 s a lookup; failing over at once and pausing inference for 20 s brought the median to 1.7 s.
 - **Talk ranking:** ranking by best hit beat summing every hit on all three runs (last run: 78.5% against 53.5% among the same top three).
-- **Still unmeasured:** the full 370-talk corpus with these modes (`INGEST_NS=ingest-ci ingest/run.sh eval --n 200 --modes screen,slide,projector,browser`), stage keynotes, and real photos off a real projector.
+- **Weakest cases:** the browser window (48%: at a 1280 px upload the video is about 360 px wide) and stage keynotes (50% of 18 photos: no fixed surround to match, so they depend on `find_screen()` and the throttled image search).
+- **Still unmeasured:** real photos off a real projector.
 
 ## Simulated photos used in the docs
 
