@@ -46,6 +46,8 @@ function show(name) {
 }
 
 async function route() {
+  selecting = false;
+  selected.clear();
   const [name, id] = location.hash.slice(1).split("/");
   if (name === "match" && id) return openMatch(decodeURIComponent(id));
   if (name === "roll" || name === "timeline") {
@@ -417,10 +419,17 @@ $("share").onclick = async () => {
   toast("Link copied");
 };
 
-// Roll
+// Roll. Select turns the tiles into toggles, to delete photos from this phone.
+let selecting = false;
+const selected = new Set();
+
 async function renderRoll() {
   const photos = await allPhotos();
   const queued = photos.filter((p) => p.state === "queued").length;
+  selecting &&= photos.length > 0;
+  $("select").hidden = !photos.length;
+  $("select").textContent = selecting ? "Cancel" : "Select";
+  renderSelection();
   $("roll-sub").textContent = photos.length
     ? `${plural(photos.length, "slide")} so far · every talk's recording is on YouTube`
     : "No photos yet. Take one from Capture.";
@@ -432,16 +441,33 @@ async function renderRoll() {
     const grid = el("ul", "grid");
     grid.append(...list.map((photo) => {
       const matched = photo.state === "matched";
-      const tile = el(matched ? "a" : "div", matched ? "tile" : "tile queued");
+      const tile = el(selecting ? "button" : matched ? "a" : "div", matched ? "tile" : "tile queued");
       const img = el("img");
       img.src = photoURL(photo);
-      img.alt = matched ? "" : `Photo from ${time(photo.takenAt)}, waiting to match`;
+      img.alt = matched || selecting ? "" : `Photo from ${time(photo.takenAt)}, waiting to match`;
       tile.append(img, el("time", "", time(photo.takenAt)));
-      if (matched) {
+      const label = `${time(photo.takenAt)}: ${matched ? photo.talks[photo.pick].title : "waiting to match"}`;
+      if (!matched) tile.append(el("span", "badge", "Queued"));
+      if (selecting) {
+        tile.type = "button";
+        tile.setAttribute("aria-label", label);
+        const mark = el("span", "mark");
+        mark.innerHTML = '<svg aria-hidden="true"><use href="#i-check"/></svg>';
+        tile.append(mark);
+        const pick = (on) => {
+          tile.classList.toggle("picked", on);
+          tile.setAttribute("aria-pressed", on);
+        };
+        pick(selected.has(photo.id));
+        tile.onclick = () => {
+          if (!selected.delete(photo.id)) selected.add(photo.id);
+          pick(selected.has(photo.id));
+          renderSelection();
+          say(`${plural(selected.size, "photo")} selected`);
+        };
+      } else if (matched) {
         tile.href = `#match/${photo.id}`;
-        tile.setAttribute("aria-label", `${time(photo.takenAt)}: ${photo.talks[photo.pick].title}`);
-      } else {
-        tile.append(el("span", "badge", "Queued"));
+        tile.setAttribute("aria-label", label);
       }
       const item = el("li");
       item.append(tile);
@@ -452,6 +478,33 @@ async function renderRoll() {
     return section;
   }));
 }
+
+function renderSelection() {
+  $("select-bar").hidden = !selecting;
+  $("select-count").textContent = selected.size ? `${plural(selected.size, "photo")} selected` : "Tap the photos to delete";
+  $("delete").disabled = !selected.size;
+}
+
+$("select").onclick = () => {
+  selecting = !selecting;
+  selected.clear();
+  renderRoll();
+};
+
+$("delete").onclick = async () => {
+  // A photo with a lookup running would be saved again when it finishes: leave it for now.
+  const ids = [...selected].filter((id) => !inFlight.has(id));
+  const busy = selected.size - ids.length;
+  for (const id of ids) {
+    await deletePhoto(id);
+    URL.revokeObjectURL(urls.get(id));
+    urls.delete(id);
+  }
+  selecting = false;
+  selected.clear();
+  await renderRoll();
+  toast(`${plural(ids.length, "photo")} deleted from this phone.` + (busy ? ` ${plural(busy, "photo")} still matching: try again in a moment.` : ""));
+};
 
 async function renderRollThumb() {
   const photos = await allPhotos();

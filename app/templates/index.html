@@ -68,7 +68,10 @@
   </section>
 
   <section id="roll" class="view paper" aria-labelledby="roll-title" hidden>
-    <h1 id="roll-title">Photo roll</h1>
+    <div class="roll-head">
+      <h1 id="roll-title">Photo roll</h1>
+      <button class="ghost" id="select" type="button" hidden>Select</button>
+    </div>
     <p class="sub" id="roll-sub"></p>
     <div class="queue" id="queue" hidden>
       <svg aria-hidden="true"><use href="#i-cloud-off"/></svg>
@@ -76,6 +79,10 @@
       <button class="ghost" id="retry" type="button">Retry</button>
     </div>
     <div id="roll-days"></div>
+    <div class="select-bar" id="select-bar" hidden>
+      <p id="select-count"></p>
+      <button class="button primary" id="delete" type="button" disabled>Delete</button>
+    </div>
     <footer class="credits">
       <p>Talks from CNCF's KubeCon + CloudNativeCon North America 2024 recordings (CC BY), linked on YouTube.</p>
       <p>version {{ version }}</p>
