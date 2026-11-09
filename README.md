@@ -45,7 +45,17 @@ Are we using it, what for, and where do you go to see it?
 - **Access:** the API token is in Secret `dash0-system/dash0-authorization-secret`. The steps for reading it safely are under [Observability (Dash0)](#observability-dash0).
 - **Ingest runs:** the first run (the POC, about 11:20 MT) predates the ingest telemetry, so the dashboard's "ingest: pipeline" panels are empty for it. That's expected. The V2 run is the measured one.
 - **Also in Dash0:** synthetic check `slidekick-healthz` and SLO `slidekick-availability` (Dash0 > Synthetic checks, Dash0 > SLOs).
-- **Not yet:** browser monitoring, and an Agent0 investigation. See the [checklist](#demo-ready-checklist).
+- **Not yet:** see the [checklist](#demo-ready-checklist).
+
+#### How Dash0 helped us solve a problem
+
+1. **The gap.** About 2:40 PM, the dashboard's app panels had nothing in them. Dash0 showed **zero server spans from service `slidekick` in two hours**, though the app was serving traffic: 127 synthetic `/healthz` probes, browser page views, and its logs still arriving. That morning, on the Node starter, the same query showed about 3,500 server spans an hour. Tracing had gone dark silently when the app moved to Python, and nothing alerted on it, because logs kept flowing.
+2. **We asked Agent0** why `slidekick` was serving requests but sending no traces ([Agent0 thread](https://app.dash0.com/agent0?org=2f80d046-5fdb-425e-bb24-be79c87eb43d&s=eJydj8sKwjAQRf9l1i32qaE7wY0rQf2BaXNbAzEtTbKQ0n83KFREF-JuuMPMOXeiFVUTKePQjewgtx2MSx6ZPQwwVLWsLSJylxEs95IqQi5SZPkmLrO1iIu0kLFo0zpmbkpkSESZCJojavvGW8izuuLIpgNVxmu95DsfiKo3bzvJji1coEi07LWj6MPupCRqHr9J3obwiUxvQHMwWPFS5zX90eR5_Ct3vgOyNW8n)).
+3. **The root cause.** The Dash0 operator's injector had logged it at every pod start, flagged as a telemetry-collection issue: `cannot auto-instrument Python process: dependency conflicts: opentelemetry-api (requires ==1.44.0, found 1.45.2)`. We had never added an OpenTelemetry package. **FastAPI 0.162.2 pulls in `opentelemetry-api` itself** (`uv pip compile` shows `# via fastapi`), so the injector found a newer API than its own 1.44.0 and turned itself off. That's been true since the first Python app ([#7](https://github.com/Naterd/hackathon-cnh/pull/7)).
+4. **The fix.** Pin `opentelemetry-api==1.44.0` in `app/requirements.txt`. FastAPI accepts it (it asks for `>=1.44.0`), and it matches the injector exactly, so the injector keeps working.
+5. **Why it matters.** Without traces there are no request, error or latency panels for the app; the browser-to-backend trace link from [#18](https://github.com/Naterd/hackathon-cnh/pull/18) has no backend half; and there's nowhere to put the lookup's confidence score.
+
+**The lesson:** "don't install OpenTelemetry packages" isn't enough. A transitive dependency counts too. On every requirements change, run `uv pip compile app/requirements.txt | grep -i opentelemetry`.
 
 ### Radar: Kubernetes UI and AI SRE
 
@@ -117,7 +127,8 @@ Judged on: depth of instrumentation (traces, logs, metrics, real-user monitoring
 - [x] Real-user monitoring: Dash0's web SDK in `app/templates/base.html` as service `slidekick-web` ([#18](https://github.com/Naterd/hackathon-cnh/pull/18)). The ingest-only token comes from `app-credentials`. Verified 2:18 PM: a page load reached Dash0 as page views and web events in about 15 s. (Ad blockers can block it on a laptop; phones are fine.)
 - [ ] The match confidence recorded on the lookup span, once `/api/lookup` is real. Owner: whoever wires the lookup.
 - [ ] Observability in the product, for example the lookup's latency or trace ID on the results page. Owner: team.
-- [ ] **Agent0 or the Dash0 MCP finds and fixes something real**, linked here. Owner: Joel.
+- [x] **Agent0 found something real and offered a valid fix:** the Python app had sent no traces since #7, because FastAPI pulls in `opentelemetry-api` 1.45.2, which turned the Dash0 injector off. The fix is to pin `opentelemetry-api==1.44.0` ([Agent0 thread](https://app.dash0.com/agent0?org=2f80d046-5fdb-425e-bb24-be79c87eb43d&s=eJydj8sKwjAQRf9l1i32qaE7wY0rQf2BaXNbAzEtTbKQ0n83KFREF-JuuMPMOXeiFVUTKePQjewgtx2MSx6ZPQwwVLWsLSJylxEs95IqQi5SZPkmLrO1iIu0kLFo0zpmbkpkSESZCJojavvGW8izuuLIpgNVxmu95DsfiKo3bzvJji1coEi07LWj6MPupCRqHr9J3obwiUxvQHMwWPFS5zX90eR5_Ct3vgOyNW8n), [the story](#how-dash0-helped-us-solve-a-problem))
+- [ ] Ship the tracing fix (pin `opentelemetry-api==1.44.0`) and confirm `slidekick` server spans come back in Dash0. Owner: Joel.
 - [x] *(bonus)* Dashboard *SlideKick: Four Golden Signals*: app, ingest Jobs, ingest pipeline
 - [x] *(bonus)* SLO `slidekick-availability`: 99% of synthetic `/healthz` checks pass, over a rolling 28 days. A latency SLO on `/api/lookup` can follow once the lookup is real.
 - [x] *(bonus)* Synthetic check `slidekick-healthz`: GET `https://slidekick.us/healthz` every minute from Oregon and N. Virginia. It asserts status 200, body `ok`, and a TLS certificate valid for more than 7 days; it's degraded above 1 s. It sends tracing headers, so each probe also shows up as a trace in our app.
