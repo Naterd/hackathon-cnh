@@ -22,8 +22,11 @@ env:
   SMOKE_TALKS: 9RvDczVIiS0,Mj04QOqAaJ8,4d4X8S4Zeks,Cakv3miyVr4
 jobs:
   ingest:
-    # Same-repo PRs only: code from a fork never reaches the cluster runners.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # PAUSED for the demo (Nov 9): the smoke index and the accuracy gate spend the Elastic trial
+    # inference quota that the live lookup needs. Manual runs (workflow_dispatch) still work.
+    # To resume on PRs, restore this condition, which keeps code from forks off the cluster runners:
+    #   if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch'
     runs-on: slidekick-gke
     timeout-minutes: 45
     steps:
