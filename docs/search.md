@@ -77,7 +77,7 @@ POST kubecon-moments/_search
 ```
 
 5. **Merge and group in code.** Merge the hybrid hits and the fingerprint hits by rank (RRF, k = 60); they come from two indices. Then group by `talk_id`: semantic fields don't support aggregations. Rank talks by their best single hit, then by the sum of their best three. Don't sum every hit: RRF scores are nearly flat, so a sum mostly counts hits, and ten weak hits beat one still that came first on every leg. The best talk's first hit is the moment to show, and its `url` opens YouTube at that second. Show the top three talks: the right one is in the top three far more often than it is first.
-6. **Survive a throttled inference service.** The image search and the text-to-image search each need an embedding from Elastic's inference service, which answers HTTP 429 over its rate limit. `es()` retries a 429 once. If it still fails, `lookup()` uses the keyword search and the fingerprint, which need no inference, and returns `"degraded": true`. A 429 takes about 4 s to come back, so three tries made a throttled lookup take 16 s.
+6. **Survive a throttled inference service.** The image search and the text-to-image search each need an embedding from Elastic's inference service, which answers HTTP 429 over its rate limit, after 4–6 s. `lookup()` doesn't retry the hybrid query: it falls back to the keyword search and the fingerprint, which need no inference, returns `"degraded": true`, and skips the inference legs for the next 20 s so only one lookup pays for finding out. With three tries a throttled lookup took 16 s.
 
 Things that bit us while testing:
 - **`rank_window_size` must be at least `size`.** It defaults to 10, so `size: 50` without it returns HTTP 400.

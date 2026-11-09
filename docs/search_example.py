@@ -33,13 +33,18 @@ LOGO_WORDS = ("kubec", "ubecon", "nativec", "cloudnat", "america")  # OCR misrea
 LAYOUT = Path(__file__).with_name("layout-kubecon-na-2024.png")
 FRAME = np.float32([[0, 0], [1280, 0], [1280, 720], [0, 720]])
 MIN_INLIERS = 12           # matched points that must agree before we believe the recording is in the photo
+MIN_AGREE = 0.4            # and the flattened photo must correlate this well with the layout's fixed pixels.
+                           # Right placements measured 0.7-0.95; false ones (a slide's own KubeCon footer
+                           # matching the logo, on 14 of 60 slide-only photos) -0.5 to -0.1
 # A side index with one pixel fingerprint (`fp`) per still, same ids as INDEX: ingest/details.py builds it.
 FP_INDEX = "kubecon-details"
 FP_MIN = 0.7               # cosine below this is noise: leave the fingerprint out of the ranking
 FP_SURE = (0.8, 0.03)      # cosine, and lead over the best other talk, at which the fingerprint decides alone:
                            # 96% right at this bar on simulated photos against 2,222 stills
+INFERENCE_PAUSE = 20       # seconds to do without the inference legs after a 429, so one slow lookup pays, not all
 _local = threading.local()
 _layout_lock, _layout = threading.Lock(), None
+_inference_off_until = 0.0
 
 
 class Throttled(Exception):
@@ -60,8 +65,8 @@ def es(method, path, body=None, tries=2):
                 raise
             if attempt == tries - 1:
                 raise Throttled(path) from e
-            time.sleep(1)  # the limit refills within about a second. A 429 itself takes about 4 s to come
-            # back, so more tries make a throttled lookup very slow: 3 tries measured 16 s.
+            time.sleep(1)  # the limit refills within about a second. A 429 itself takes 4-6 s to come
+            # back, so tries are expensive: 3 measured 16 s for one lookup, 2 measured 14 s.
 
 
 def _sift():
@@ -78,7 +83,7 @@ def _layout_features():
             tpl = cv2.imread(str(LAYOUT), cv2.IMREAD_UNCHANGED)
             if tpl is None:
                 print(f"warning: {LAYOUT} is missing, so recordings can't be located in photos", file=sys.stderr)
-                _layout = (np.zeros((0, 2), np.float32), np.zeros((0, 128), np.float32))
+                _layout = (np.zeros((0, 2), np.float32), np.zeros((0, 128), np.float32), None, None)
                 return _layout
             pts, des = [], []
             for scale in (1.0, 0.5):  # photos usually show the frame smaller than 1280 px
@@ -87,13 +92,15 @@ def _layout_features():
                 k, d = _sift()[0].detectAndCompute(g, m)
                 pts += [np.float32(kp.pt) / scale for kp in k]
                 des.append(d)
-            _layout = (np.float32(pts), np.vstack(des))
+            small = cv2.resize(tpl[..., 0], (320, 180), interpolation=cv2.INTER_AREA).astype(np.float32)
+            fixed = cv2.resize(tpl[..., 3], (320, 180), interpolation=cv2.INTER_NEAREST) > 0
+            _layout = (np.float32(pts), np.vstack(des), small[fixed] - small[fixed].mean(), fixed)
     return _layout
 
 
 def _match_layout(img):
     """Homography from the 1280x720 recording frame to img, and how many matched points agree with it."""
-    pts, des = _layout_features()
+    pts, des = _layout_features()[:2]
     sift, clahe = _sift()
     k, d = sift.detectAndCompute(clahe.apply(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)), None)  # CLAHE: washed-out projections
     if d is None or len(k) < 8 or not len(des):
@@ -129,7 +136,13 @@ def find_recording(img, pad=80):
     quad = cv2.perspectiveTransform(FRAME.reshape(1, 4, 2), h)[0]
     if not cv2.isContourConvex(quad) or cv2.contourArea(quad) < 0.005 * img.shape[0] * img.shape[1]:
         return None
-    return h
+    # Check the answer against the pixels: flattened, the photo's surround must look like the layout's.
+    want, fixed = _layout_features()[2:]
+    flat = cv2.warpPerspective(img, np.diag([0.25, 0.25, 1.0]) @ np.linalg.inv(h), (320, 180), flags=cv2.INTER_AREA)
+    got = cv2.cvtColor(flat, cv2.COLOR_BGR2GRAY).astype(np.float32)[fixed]
+    got -= got.mean()
+    agree = float((got * want).sum() / (np.linalg.norm(got) * np.linalg.norm(want) + 1e-6))
+    return h if agree >= MIN_AGREE else None
 
 
 def find_screen(img):
@@ -297,17 +310,25 @@ def lookup(photo_bytes, event="kubecon-na-2024", size=50, index=INDEX):
     cosine = fp[0][1] if fp else 0.0
     best_talk = fp[0][0]["_source"]["talk_id"] if fp else None
     lead = cosine - max([c for h, c in fp if h["_source"]["talk_id"] != best_talk], default=0.0)
-    sure = cosine >= FP_SURE[0] and lead >= FP_SURE[1]
+    # Sure only for a located recording: 80 right of 83 there, but 7 of 9 on other flattened screens.
+    sure = found == "recording" and cosine >= FP_SURE[0] and lead >= FP_SURE[1]
 
+    global _inference_off_until
     degraded, hits = False, []
     if not sure:  # when the photo lines up with one still pixel for pixel, the other legs can't add anything
-        try:
-            hits = es("POST", f"/{index}/_search", body)["hits"]["hits"]
-        except (Throttled, urllib.error.URLError, TimeoutError):
+        if time.time() >= _inference_off_until:
+            try:
+                hits = es("POST", f"/{index}/_search", body, tries=1)["hits"]["hits"]
+            except Throttled:  # a 429 takes 4-6 s to come back, so no retry: the next lookups skip it for a while
+                _inference_off_until, degraded = time.time() + INFERENCE_PAUSE, True
+            except (urllib.error.URLError, TimeoutError):
+                degraded = True
+        else:
+            degraded = True
+        if degraded and text:
             # The image and text-to-image legs need the inference service. Without it, the slide's words
             # and the fingerprint still find the talk for most photos, with no inference call.
-            degraded = True
-            hits = es("POST", f"/{index}/_search", {"size": size, "_source": source, "query": keywords})["hits"]["hits"] if text else []
+            hits = es("POST", f"/{index}/_search", {"size": size, "_source": source, "query": keywords})["hits"]["hits"]
 
     # Merge the rankings by rank (RRF, k = 60), in code: the fingerprint lives in another index.
     docs, score = {}, {}
