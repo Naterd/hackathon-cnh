@@ -1,0 +1,53 @@
+# ingest/details.py on the spot pool. Rendered by ingest/run.sh: STEP=thumbs runs one pod per talk
+# (thumbnail and slide title for each still); STEP=details runs one pod that loads kubecon-details.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ingest-__STEP__
+  namespace: __NS__
+  labels: {app: ingest, step: __STEP__, purpose: cnh-hackathon, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
+spec:
+  completionMode: Indexed
+  completions: __COUNT__
+  parallelism: __PARALLEL__
+  backoffLimitPerIndex: 2
+  podFailurePolicy:
+    rules:
+      - action: Ignore                 # spot preemption: rerun without counting a failure
+        onPodConditions: [{type: DisruptionTarget}]
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {app: ingest, step: __STEP__, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
+      annotations:
+        gke-gcsfuse/volumes: "true"
+    spec:
+      restartPolicy: Never
+      serviceAccountName: downloader
+      nodeSelector: {workload: ingest}
+      tolerations: [{key: workload, operator: Equal, value: ingest, effect: NoSchedule}]
+      containers:
+        - name: __STEP__
+          image: __IMAGE__
+          command: ["python", "-u", "/code/details.py", "__STEP__", "--derived", "/bucket/derived/__DERIVED__/__EVENT__",
+                    "--talks", "/talks/talks.txt", "--sched", "/bucket/derived/sched/__EVENT__.json", "--index", "__INDEX__"]
+          env:
+            - {name: WORKERS, value: "2"}
+            - {name: FORCE, value: "__FORCE__"}
+          envFrom: [{secretRef: {name: elastic}}]
+          resources:
+            requests: {cpu: "2", memory: 3Gi}
+            limits: {cpu: "2", memory: 4Gi}
+          volumeMounts:
+            - {name: bucket, mountPath: /bucket}
+            - {name: code, mountPath: /code}
+            - {name: talks, mountPath: /talks}
+      volumes:
+        - name: bucket
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            volumeAttributes: {bucketName: __BUCKET__, mountOptions: "implicit-dirs,uid=1000,gid=1000"}
+        - name: code
+          configMap: {name: ingest-code}
+        - name: talks
+          configMap: {name: ingest-talks}
