@@ -38,6 +38,18 @@ Are we using it, what for, and where do you go to see it?
 - **How we work with it:** code, manifest and CI changes go through a PR. Read Gitar's findings before merging, and when it misses a project gotcha, add that gotcha to `main.md`. A review can take several minutes; PR #5's check ran for about 4.5.
 - **Not yet:** CI-failure diagnosis and auto-apply. These need a CI job that runs on `pull_request`. Our only workflow runs on pushes to `main`, so a PR has no CI for Gitar to fix.
 
+#### How Gitar helped us
+
+1. **It reviewed every change.** 27 PRs merged by 4 PM, each with a Gitar review against [`.gitar/review/main.md`](.gitar/review/main.md), our list of what must never ship: secrets, the app contract, the deploy bot's lines, Elasticsearch limits.
+2. **It caught real bugs before they shipped.**
+   - The duplicate Argo CD Application that would have fought ours ([#4](https://github.com/Naterd/hackathon-cnh/pull/4), fixed in [#5](https://github.com/Naterd/hackathon-cnh/pull/5)).
+   - A 300 KB PNG in a ConfigMap that broke `kubectl apply` ([#19](https://github.com/Naterd/hackathon-cnh/pull/19)).
+   - Bulk indexing that silently dropped throttled documents ([#17](https://github.com/Naterd/hackathon-cnh/pull/17)).
+   - Key files briefly readable by other users ([#9](https://github.com/Naterd/hackathon-cnh/pull/9)).
+   - In all, 15 findings we fixed before merging.
+3. **It fixed problems itself.** On [#16](https://github.com/Naterd/hackathon-cnh/pull/16) it found that a crafted upload could OOM-kill the pod, and with auto-apply on, it pushed the fix ([`a8db50f`](https://github.com/Naterd/hackathon-cnh/commit/a8db50f)). On [#3](https://github.com/Naterd/hackathon-cnh/pull/3) it tightened its own review exemption.
+4. **It guards what we learned.** When Agent0 fixed the tracing outage ([#21](https://github.com/Naterd/hackathon-cnh/pull/21)), it also updated Gitar's rules, so Gitar now flags anyone who changes the `opentelemetry-api` pin. Our `app-ci` drift tests turn the same mistakes into failing checks for Gitar to diagnose.
+
 ### Dash0: observability
 
 - **How it's wired:** the Dash0 operator in namespace `dash0-system` injects OpenTelemetry into pods in `slidekick` and `ingest`. The app and the ingest Jobs export traces, metrics and logs with no SDK setup in our code. `ingest/telemetry.py` adds per-talk and per-phase spans, plus the stills and documents counters.
@@ -95,6 +107,17 @@ Are we using it, what for, and where do you go to see it?
 - **How the app queries it:** [`docs/search.md`](docs/search.md), with a runnable example in `docs/search_example.py`.
 - **Count with `_count`, not `_cat/indices`.** `_cat`'s `docs.count` includes the nested chunks the `semantic` fields create, about 3 per still, so it shows 39,602 for our 12,516 documents.
 - **Rules that bite:** exclude `slide` and `said` from `_source` in every search. Images must be at most 1 MB decoded. Filters go inside the `knn` clause. Bulk returns 200 even when items fail. See `AGENTS.md`.
+
+#### How Elasticsearch helped us
+
+1. **It's the whole data layer.** One Serverless project holds 12,516 documents: a still of every slide from 370 talks, with its OCR text and the captions spoken while it was on screen. Embeddings come from Elastic's inference service (Jina), so there's no model to host.
+2. **One lookup is one hybrid query.** Image kNN on the photo, OCR keyword matching, and text-to-image are merged with RRF, then grouped by talk. A pixel-fingerprint leg in a second index catches photos of a recording playing on a laptop or projector.
+3. **We measured it, and it got better all afternoon.** Nate Stewart's eval renders random moments as phone photos (tilt, glare, blur) and runs them through the live lookup ([`docs/results.md`](docs/results.md)).
+   - Baseline at 12:11 PM: the right talk first **58%** of the time.
+   - Over the whole corpus at 2:29 PM: **74.5%** first, **83.5%** in the top three, and **66.5%** on the exact slide.
+   - The gains came from the fingerprint leg, from locating the recording in the photo, and from handling throttling.
+4. **It degrades instead of failing.** When the inference service answers 429, the lookup pauses image search and falls back to keywords and the fingerprint, and the page says so ([#24](https://github.com/Naterd/hackathon-cnh/pull/24)).
+5. **The same documents make it accessible.** The slide's OCR text becomes the image's alt text, and the captions become "Said at 0:05" ([#29](https://github.com/Naterd/hackathon-cnh/pull/29)).
 
 ## Demo-ready checklist
 
