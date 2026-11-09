@@ -1,22 +1,28 @@
 """Phone photo in, talks and YouTube moments out. docs/search.md explains the index and
-the query; docs/search_example.py is the reference this follows."""
+the query. The lookup is docs/search_example.py's, which ingest/eval.py measures."""
 import base64
 import functools
 import io
 import json
 import logging
 import os
+import sys
 import threading
 import urllib.request
+from pathlib import Path
 
-from PIL import Image, ImageOps
+import numpy as np
+from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
+try:  # the image ships it next to this file
+    import search_example
+except ImportError:  # a checkout keeps it in docs/
+    sys.path.append(str(Path(__file__).resolve().parent.parent / "docs"))
+    import search_example
+
 INDEX = "kubecon-moments"  # alias; points at the current index version
-EVENT = "kubecon-na-2024"
-MAX_BYTES = 900_000  # the semantic field takes at most 1 MB of decoded image bytes
-MAX_PIXELS = 25_000_000  # the page sends at most 1280 px a side, about 1.6M pixels
-FIELDS = ["talk_id", "title", "speakers_text", "n", "start_sec", "url"]
+MAX_PIXELS = 25_000_000  # the page sends at most 2560 px a side, about 5M pixels
 
 log = logging.getLogger("slidekick.search")
 
@@ -24,6 +30,18 @@ log = logging.getLogger("slidekick.search")
 # and the engine isn't documented as thread-safe, so one OCR at a time (about 0.5 s).
 ocr = RapidOCR()
 ocr_lock = threading.Lock()
+
+
+# search_example makes an engine per thread, about 300 MB each. The thread pool also serves
+# /api/slide and grows to dozens of threads, which would take the pod past its 2Gi limit.
+def one_ocr(img):
+    with ocr_lock:
+        result, _ = ocr(img)
+    return [(text, *np.mean(box, axis=0)) for box, text, _ in (result or [])]
+
+
+search_example.ocr = one_ocr
+Throttled = search_example.Throttled
 
 
 def configured():
@@ -48,65 +66,29 @@ class BadPhoto(ValueError):
     """The upload isn't an image Pillow can read, or has too many pixels to decode safely."""
 
 
-def prepare(photo):
-    """Upright JPEG under the field's limit, as the semantic field's image object."""
+def lookup(photo):
+    # search_example decodes the whole photo at full size with no pixel cap, so check it here first.
     try:
         im = Image.open(io.BytesIO(photo))  # reads the header only
-        im.draft("RGB", (1280, 1280))  # JPEGs then decode at 1/2, 1/4 or 1/8 scale
-        # A 10 MB PNG can hold 100M+ pixels, and decoding takes several bytes per pixel.
+        # The full size, before draft(): a 10 MB PNG or JPEG can hold 100M+ pixels, at several bytes each.
         if im.width * im.height > MAX_PIXELS:
             raise BadPhoto(f"{im.width}x{im.height} is too many pixels")
-        im = ImageOps.exif_transpose(im).convert("RGB")
+        im.draft("RGB", (1280, 1280))  # so the check below decodes JPEGs at a fraction of the size
+        im.load()  # a truncated or corrupt image fails here, as a 400
     except (OSError, Image.DecompressionBombError) as e:  # covers UnidentifiedImageError
         raise BadPhoto(str(e)) from e
-    im.thumbnail((1280, 1280))
-    for quality in (85, 70, 55):
-        buf = io.BytesIO()
-        im.save(buf, "JPEG", quality=quality)
-        if buf.tell() <= MAX_BYTES:
-            break
-    jpeg = buf.getvalue()
-    value = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
-    return {"type": "image", "format": "base64", "value": value}, jpeg
 
-
-def lookup(photo, size=50):
-    image, jpeg = prepare(photo)
-    with ocr_lock:
-        result, _ = ocr(jpeg)
-    text = " ".join(r[1] for r in result or [])
-
-    # No filter on the kNN leg: only stills have `slide`, and a filter there made the query
-    # 3-6x slower. If one is ever needed, it goes inside the knn clause.
-    retrievers = [{"standard": {"query": {"knn": {
-        "field": "slide", "k": 20, "num_candidates": 100,
-        "query_vector_builder": {"embedding": {"input": image}},
-    }}}}]
-    if text:
-        frames = [{"term": {"source": "frame"}}, {"term": {"event": EVENT}}]
-        retrievers += [
-            {"standard": {"query": {"bool": {"filter": frames, "must": {
-                "multi_match": {"query": text, "fields": ["ocr_text^2", "said_text"]}}}}}},
-            {"standard": {"query": {"bool": {"filter": frames, "must": {
-                "match": {"slide": text}}}}}},
-        ]
-    body = {
-        "size": size,
-        "_source": {"includes": FIELDS, "excludes": ["slide", "said", "abstract"]},
-        "retriever": {"rrf": {"retrievers": retrievers, "rank_window_size": 100}}  # >= size
-        if len(retrievers) > 1 else retrievers[0],
-    }
-    hits = es("POST", f"/{INDEX}/_search", body)["hits"]["hits"]
-
-    # Semantic fields don't aggregate, so group by talk here. RRF scores sit close together;
-    # summing them per talk is what separates the talks.
-    talks = {}
-    for h in hits:
-        s = h["_source"]
-        t = talks.setdefault(s["talk_id"], {"talk_id": s["talk_id"], **names(s), "score": 0.0, "moments": []})
-        t["score"] += h["_score"]
-        t["moments"].append({"id": h["_id"], "n": s["n"], "start_sec": s["start_sec"], "url": s["url"]})
-    return {"talks": sorted(talks.values(), key=lambda t: t["score"], reverse=True)[:3]}
+    # Not inside the try: urllib's errors are OSErrors too, and a 400 makes the page delete the photo.
+    result = search_example.lookup(photo)
+    if result["degraded"] and not result["talks"]:
+        # No inference, no words and no fingerprint: a 503 keeps the photo queued, where an
+        # empty answer would make the page delete it.
+        raise Throttled("inference unavailable and nothing else matched")
+    for t in result["talks"]:
+        t.update(names({"title": t["title"], "speakers_text": t["speakers"]}))
+        for m in t["moments"]:
+            m["n"] = int(m["id"][-3:])  # still ids end in the slide's number
+    return {k: result[k] for k in ("talks", "found", "degraded", "fingerprint")}
 
 
 def names(source):
