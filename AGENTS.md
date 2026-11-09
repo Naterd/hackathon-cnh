@@ -55,7 +55,7 @@ Judged: AI investigations, Radar's MCP server for shipping, syncing Argo CD and 
 
 Judged: Agent0 and the Dash0 MCP server. Bonus: the Dash0 CLI, dashboards, alerts and synthetic monitoring.
 
-- The Dash0 operator injects OpenTelemetry into Python pods in `slidekick` and `ingest`, and turns itself off if the image already has any `opentelemetry-*` package. Don't add one, not even `opentelemetry-api`. Custom spans and metrics import `opentelemetry` in a `try/except ImportError`, like `ingest/telemetry.py`.
+- The Dash0 operator injects OpenTelemetry into Python pods in `slidekick` and `ingest`, and turns itself off if the image already has any `opentelemetry-*` package. Don't add one. The exception is `opentelemetry-api`, which fastapi requires: the operator allows it, but only at the exact version its SDK pins (1.44.0), so keep the pin in `app/requirements.txt` and check the operator's startup warning in the pod logs after bumping fastapi. Custom spans and metrics import `opentelemetry` in a `try/except ImportError`, like `ingest/telemetry.py`.
 - Run one uvicorn process per pod and scale with replicas: auto-instrumentation doesn't support uvicorn's `--workers` or `--reload`.
 - Label pod templates with `app.kubernetes.io/name` and `app.kubernetes.io/version`. Ingest Jobs use `app.kubernetes.io/name: slidekick-ingest` and `ingest/telemetry.py`.
 - Query Dash0 through its MCP server (https://dash0.com/docs/dash0/ai/mcp) when connected, otherwise the API with the header file from the README. Never print the token.

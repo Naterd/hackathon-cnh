@@ -35,7 +35,7 @@ Report these as blocking review findings.
 
 ## Worth a comment, not blocking
 
-- **Dash0 labels.** New workloads need `app.kubernetes.io/name` and `app.kubernetes.io/version`; ingest Jobs use `app.kubernetes.io/name: slidekick-ingest`. Dash0's operator injects OpenTelemetry automatically and turns itself off if the image already has any `opentelemetry-*` package, so flag one in requirements or the Dockerfile, a hand-rolled SDK setup, or an OTLP protocol other than `http/protobuf`.
+- **Dash0 labels.** New workloads need `app.kubernetes.io/name` and `app.kubernetes.io/version`; ingest Jobs use `app.kubernetes.io/name: slidekick-ingest`. Dash0's operator injects OpenTelemetry automatically and turns itself off if the image already has any `opentelemetry-*` package, so flag one in requirements or the Dockerfile (except the `opentelemetry-api==1.44.0` pin in `app/requirements.txt`, which fastapi requires and the operator needs at exactly that version; flag removing or changing it), a hand-rolled SDK setup, or an OTLP protocol other than `http/protobuf`.
 - **Elasticsearch HTTP 400s and 429s.** Count them, and retry throttled bulk items rather than dropping them.
 - **Accessibility** (the demo uses VoiceOver): every control has a label, results are announced through an `aria-live` region, and images have alt text.
 - **Camera roll.** Read EXIF `DateTimeOriginal` before drawing the photo to a canvas, because the canvas drops it. A time without an offset is Mountain Time. Don't rely on GPS.

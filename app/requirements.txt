@@ -1,5 +1,9 @@
-# No opentelemetry-* packages: the Dash0 operator turns itself off when it finds one.
+# No opentelemetry-* packages besides the API pin below: the Dash0 operator turns itself
+# off when it finds one.
 fastapi==0.162.2
+# fastapi requires opentelemetry-api>=1.44.0. The operator's injected SDK needs exactly
+# 1.44.0 and turns itself off on any other version, so keep this in step with the operator.
+opentelemetry-api==1.44.0
 jinja2==3.1.6
 uvicorn==0.54.0
 # OCR: the same versions as ingest/requirements.txt, so a photo's text is read the same
