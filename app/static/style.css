@@ -209,6 +209,17 @@ main { position: relative; flex: 1; min-height: 0; }
 .tile time { position: absolute; left: 8px; bottom: 6px; font-size: 12px; font-weight: 600; text-shadow: 0 1px 2px rgb(0 0 0 / 70%); }
 .tile.queued { opacity: 0.55; }
 .badge { position: absolute; top: 6px; right: 6px; padding: 3px 5px; background: var(--color-bg); color: var(--color-text); font-size: 9px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.roll-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+button.tile { width: 100%; padding: 0; border: 0; font: inherit; text-align: left; cursor: pointer; }
+.mark { position: absolute; top: 6px; left: 6px; display: grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid #fff; background: rgb(11 24 28 / 35%); color: var(--color-text); }
+.mark svg { width: 16px; height: 16px; stroke-width: 2.5; visibility: hidden; }
+.tile.picked { opacity: 1; outline: 3px solid var(--color-accent-400); outline-offset: -3px; }
+.picked .mark { border-color: var(--color-accent-400); background: var(--color-accent-400); }
+.picked .mark svg { visibility: visible; }
+.select-bar { position: sticky; bottom: -32px; /* the view's bottom padding */ display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 20px -24px 0; padding: 12px 24px; border-top: 1px solid var(--color-divider); background: var(--color-bg); }
+.select-bar[hidden] { display: none; }
+.select-bar p { font-size: 14px; color: var(--color-neutral-700); }
+.button:disabled { opacity: 0.35; cursor: default; }
 .credits { margin-top: 40px; font-size: 12px; color: var(--color-neutral-600); }
 .credits p + p { margin-top: 4px; }
 
