@@ -1,0 +1,13 @@
+#!/bin/sh
+# Team rule: pull before you commit. Three of us and the deploy bot push to main all day,
+# so this refuses a commit while the branch is behind its upstream.
+# Enable once per clone:  git config core.hooksPath .githooks
+# Fix a refusal:          git pull --rebase --autostash
+git fetch --quiet 2>/dev/null || exit 0          # offline: don't block
+git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1 || exit 0   # no upstream yet
+behind=$(git rev-list --count 'HEAD..@{u}')
+if [ "$behind" -gt 0 ]; then
+  echo "pre-commit: $behind new commit(s) on $(git rev-parse --abbrev-ref '@{u}')." >&2
+  echo "Run 'git pull --rebase --autostash', then commit again." >&2
+  exit 1
+fi
