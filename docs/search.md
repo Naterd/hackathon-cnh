@@ -45,12 +45,15 @@ A real still, with `slide` and `said` left out:
 
 ## Photo lookup
 
-1. **Find the screen and flatten it.** Apply the EXIF orientation and shrink to at most 1600 px. Find the screen with OpenCV, as the innermost large four-sided outline, and warp it flat to 1280×720. If there's no screen, use the photo as it is.
+1. **Find the slide in the photo.** Apply the EXIF orientation. Then, in order:
+   - **A boxed recording** (338 of the 370 talks). Everything around the slide and the speaker camera is the same picture in every boxed recording: the logo, the mountains, the box outlines. `find_recording()` matches that fixed surround (`docs/layout-kubecon-na-2024.png`, SIFT points and a RANSAC homography) and cuts the slide box out of the full-size photo. It doesn't need the screen's edges, so it works on a projector screen with a margin, with the video in a browser window, and with a head in the way. The index holds only the slide box for these talks, so the crop is what makes the image search line up.
+   - **Any other screen** (stage keynotes, a slide photographed directly). `find_screen()` takes the innermost large four-sided outline and flattens it to 1280×720.
+   - **Neither:** use the photo as it is.
 2. **OCR it** with the same engine as ingest (RapidOCR, `rapidocr-onnxruntime==1.4.4`), so merged words match the same way on both sides. Create the engine once per worker thread: 0.5 s per photo warm, about 1 s cold.
-   - **A whole recording:** most 2024 recordings show the slide in a box on the left, with the speaker and the KubeCon logo on the right, and the index holds only the box for those talks. If OCR finds the logo in the right-hand panel, crop to the slide box and keep only the words inside it. The logo text alone matches every keynote still, which is what sank screen photos in the first test (`docs/results.md`).
+   - **Drop the recording's logo text** ("KubeCon", "CloudNativeCon", "North America") when the photo wasn't cropped to the slide box. It matches every keynote still, which is what sank screen photos in the first test (`docs/results.md`).
    - **Encode the result** as a JPEG under 900 KB; the field's limit is 1 MB of decoded bytes. Send it as an image object, not a bare data URL: `{"type": "image", "format": "base64", "value": "data:image/jpeg;base64,…"}`.
 
-   `prepare()` in `docs/search_example.py` does all of this. For the demo, play the talk full screen: the crop assumes the screen shows only the video.
+   `prepare()` in `docs/search_example.py` does all of this, and needs `layout-kubecon-na-2024.png` next to it. Upload the photo as large as you can afford: the slide box is cut from the full-size photo, and on a projector photo shrunk to 1280 px the slide is only about 400 px wide.
 3. **Run one hybrid query** that merges three rankings with RRF:
 
 ```json
@@ -69,14 +72,15 @@ POST kubecon-moments/_search
 }
 ```
 
-4. **Group the hits by `talk_id` in code.** Semantic fields don't support aggregations. Rank talks by their summed scores. The best talk's first hit is the moment to show, and its `url` opens YouTube at that second.
+4. **Group the hits by `talk_id` in code.** Semantic fields don't support aggregations. Rank talks by their best single hit, then by the sum of their best three. Don't sum every hit: RRF scores are nearly flat, so a sum mostly counts hits, and ten weak hits beat one still that came first on every leg. The best talk's first hit is the moment to show, and its `url` opens YouTube at that second. Show the top three talks: the right one is in the top three far more often than it is first.
+5. **Survive a throttled inference service.** The image search and the text-to-image search each need an embedding from Elastic's inference service, which answers HTTP 429 over its rate limit. `es()` retries a 429 twice, a second or two apart. If it still fails, `lookup()` runs the keyword search alone, which needs no inference, and returns `"degraded": true`. Tell the user the match is less certain.
 
 Things that bit us while testing:
 - **`rank_window_size` must be at least `size`.** It defaults to 10, so `size: 50` without it returns HTTP 400.
 - **Don't filter the kNN leg.** Only stills have `slide`, so it can only return stills anyway. With a `source` filter inside `knn`, the image search took 7–13 s instead of about 2 s. The text legs keep their filter.
 - **Always exclude `slide`, `said` and `abstract` from `_source`,** and never highlight `slide`. Each `slide` is about 100 KB of base64.
 - **Latency:** a full lookup takes 3.7–4.8 s warm from a laptop. The first query after a quiet spell took up to 13 s, so send a warm-up query at startup and show progress in the UI. The image embedding is most of the time.
-- **Confidence:** RRF scores are close together (about 0.03–0.05). Use the gap between the first and second talk's summed scores, not the raw score.
+- **Confidence:** RRF scores are close together (about 0.03–0.05). Use the gap between the first and second talk's `score`, not the raw score.
 
 Results on the two test photos in `docs/test-photos/` (rotated, low contrast, noisy):
 

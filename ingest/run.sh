@@ -4,6 +4,7 @@
 #   ingest/run.sh extract [--limit N] [--talks id,id] [--parallel P] [--force]
 #   ingest/run.sh index   [--index NAME] [--alias kubecon-moments] [--limit N] [--talks id,id] [--replace]
 #   ingest/run.sh eval    [--n 200] [--seed 1] [--index kubecon-moments] [--min-talk1 0.5]
+#                         [--modes screen,slide,projector,browser] [--upload-px 1280]
 #   ingest/run.sh wait    extract|index|eval     # until the Job finishes; prints logs; exit 1 if it failed
 #   ingest/run.sh status
 #   ingest/run.sh logs    extract|index|eval
@@ -38,7 +39,7 @@ fi
 cmd=${1:-}; shift || true
 STEP=extract
 [[ $cmd == logs || $cmd == wait ]] && [[ -n ${1:-} ]] && { STEP=$1; shift; }
-LIMIT="" TALKS="" PARALLEL=96 FORCE=0 INDEX=kubecon-moments-$DERIVED ALIAS="" REPLACE=0 N=200 SEED=1 MIN_TALK1=""
+LIMIT="" TALKS="" PARALLEL=96 FORCE=0 INDEX=kubecon-moments-$DERIVED ALIAS="" REPLACE=0 N=200 SEED=1 MIN_TALK1="" MODES="" UPLOAD_PX=""
 [[ $cmd == eval ]] && INDEX=kubecon-moments
 while (( $# )); do
   case $1 in
@@ -52,6 +53,8 @@ while (( $# )); do
     --n)         N=$2; shift ;;
     --seed)      SEED=$2; shift ;;
     --min-talk1) MIN_TALK1=$2; shift ;;
+    --modes)     MODES=$2; shift ;;
+    --upload-px) UPLOAD_PX=$2; shift ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
   shift
@@ -66,7 +69,8 @@ render() {  # template file, then KEY=value pairs
 
 ship_code() {
   kubectl -n $NS create configmap "ingest-code" --from-file=extract.py --from-file=index.py \
-    --from-file=telemetry.py --from-file=eval.py --from-file=../docs/search_example.py --from-file=requirements.txt \
+    --from-file=telemetry.py --from-file=eval.py --from-file=../docs/search_example.py \
+    --from-file=../docs/layout-kubecon-na-2024.png --from-file=requirements.txt \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
@@ -109,6 +113,8 @@ case $cmd in
     run=$(date +%Y%m%d-%H%M%S)-$VERSION
     args=""
     [[ -n $MIN_TALK1 ]] && args+=" --min-talk1 $MIN_TALK1"
+    [[ -n $MODES ]] && args+=" --modes $MODES"
+    [[ -n $UPLOAD_PX ]] && args+=" --upload-px $UPLOAD_PX"
     ship_code
     kubectl -n $NS delete job "ingest-eval" --ignore-not-found >/dev/null
     render k8s/eval-job.yaml IMAGE="$IMAGE" EVENT="$EVENT" DERIVED="$DERIVED" BUCKET="$CNH_BUCKET" INDEX="$INDEX" \
