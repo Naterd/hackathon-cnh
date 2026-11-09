@@ -15,6 +15,7 @@ As of Nov 9, 10:15 MT. The app code starts at kickoff.
 | Elasticsearch | Serverless project `slidekick` (vector-optimized, 9.7). `.jina-embeddings-v5-omni-small` returned the right slide for a simulated phone photo (0.94 against 0.72). Bulk indexing from GKE reaches about 75 images a second. |
 | Data | All 370 downloadable KubeCon NA 2024 talks are in GCS: 720p video, metadata and English captions (263 from YouTube, 107 transcribed with Whisper). |
 | Dash0 | Operator installed on GKE. Namespaces `slidekick` and `ingest` are monitored, and Kubernetes metrics and logs are flowing. A four-golden-signals dashboard is up. See [Observability (Dash0)](#observability-dash0). |
+| Deploys | Live through GitOps (Nov 9, 11:11 MT): a merge to `main` builds the image, and Argo CD (Application `slidekick`) syncs it to namespace `slidekick` within about 3 minutes. `slidekick.us` serves the Node starter until the Python app lands. |
 | App, ingest Jobs, Radar, Gitar | To do |
 
 ## How it works
