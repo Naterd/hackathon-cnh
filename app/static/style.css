@@ -41,6 +41,27 @@ body {
   outline-offset: 3px;
 }
 
+.visually-hidden:disabled + .button {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+#result {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgb(128 128 128 / 40%);
+  border-radius: 0.5rem;
+}
+
+#result h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+#result-link {
+  text-decoration: none;
+}
+
 #preview {
   display: block;
   max-width: 100%;
