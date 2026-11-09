@@ -1,6 +1,7 @@
 """Phone photo in, talks and YouTube moments out. docs/search.md explains the index and
 the query; docs/search_example.py is the reference this follows."""
 import base64
+import functools
 import io
 import json
 import logging
@@ -15,7 +16,7 @@ INDEX = "kubecon-moments"  # alias; points at the current index version
 EVENT = "kubecon-na-2024"
 MAX_BYTES = 900_000  # the semantic field takes at most 1 MB of decoded image bytes
 MAX_PIXELS = 25_000_000  # the page sends at most 1280 px a side, about 1.6M pixels
-FIELDS = ["talk_id", "title", "speakers_text", "start_sec", "url"]
+FIELDS = ["talk_id", "title", "speakers_text", "n", "start_sec", "url"]
 
 log = logging.getLogger("slidekick.search")
 
@@ -29,11 +30,11 @@ def configured():
     return bool(os.environ.get("ELASTIC_URL") and os.environ.get("ELASTIC_ES_API_KEY"))
 
 
-def es(method, path, body):
+def es(method, path, body=None):
     req = urllib.request.Request(
         os.environ["ELASTIC_URL"].rstrip("/") + path,
         method=method,
-        data=json.dumps(body).encode(),
+        data=None if body is None else json.dumps(body).encode(),
         headers={
             "Authorization": "ApiKey " + os.environ["ELASTIC_ES_API_KEY"],
             "Content-Type": "application/json",
@@ -102,17 +103,49 @@ def lookup(photo, size=50):
     talks = {}
     for h in hits:
         s = h["_source"]
-        speakers = s.get("speakers_text") or ""
-        t = talks.setdefault(s["talk_id"], {
-            "talk_id": s["talk_id"],
-            "title": s["title"].removesuffix(" - " + speakers) if speakers else s["title"],
-            "speakers": speakers,
-            "score": 0.0,
-            "moments": [],
-        })
+        t = talks.setdefault(s["talk_id"], {"talk_id": s["talk_id"], **names(s), "score": 0.0, "moments": []})
         t["score"] += h["_score"]
-        t["moments"].append({"id": h["_id"], "start_sec": s["start_sec"], "url": s["url"]})
+        t["moments"].append({"id": h["_id"], "n": s["n"], "start_sec": s["start_sec"], "url": s["url"]})
     return {"talks": sorted(talks.values(), key=lambda t: t["score"], reverse=True)[:3]}
+
+
+def names(source):
+    """The title without its " - <speakers>" suffix, and the speakers ("" when the parse failed)."""
+    speakers = source.get("speakers_text") or ""
+    title = source["title"].removesuffix(" - " + speakers) if speakers else source["title"]
+    return {"title": title, "speakers": speakers}
+
+
+# Stills and talks don't change while the app runs, so keep the recent ones in memory.
+@functools.lru_cache(maxsize=256)
+def slide(still_id):
+    """A still as (media type, image bytes). Raises urllib's HTTPError 404 for an unknown id."""
+    doc = es("GET", f"/{INDEX}/_doc/{still_id}?_source_includes=slide")
+    header, data = doc["_source"]["slide"]["value"].split(",", 1)  # data:image/jpeg;base64,...
+    return header.removeprefix("data:").removesuffix(";base64"), base64.b64decode(data)
+
+
+@functools.lru_cache(maxsize=512)
+def talk(talk_id):
+    """A talk's length and its slides in order, or None. Treat the result as read-only: it's cached."""
+    hits = es("POST", f"/{INDEX}/_search", {
+        "size": 100,  # at most 60 stills a talk, plus the talk itself
+        "_source": {"includes": ["source", "title", "speakers_text", "duration_sec", "n", "start_sec", "url"],
+                    "excludes": ["slide", "said", "abstract"]},
+        "query": {"term": {"talk_id": talk_id}},
+        "sort": [{"n": {"order": "asc", "missing": "_first"}}],
+    })["hits"]["hits"]
+    info = next((h["_source"] for h in hits if h["_source"]["source"] == "talk"), None)
+    if info is None:
+        return None
+    return {
+        "talk_id": talk_id,
+        **names(info),
+        "duration_sec": info.get("duration_sec"),
+        "url": info["url"],
+        "slides": [{"id": h["_id"], "n": h["_source"]["n"], "start_sec": h["_source"]["start_sec"],
+                    "url": h["_source"]["url"]} for h in hits if h["_source"]["source"] == "frame"],
+    }
 
 
 def warm_up():
