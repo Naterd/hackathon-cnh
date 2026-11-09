@@ -175,7 +175,7 @@ async function addMany(files) {
     }
   }
   if (unreadable) toast(`${plural(unreadable, "file")} ${unreadable === 1 ? "isn't a photo" : "aren't photos"} SlideKick can read.`);
-  matchQueued();
+  matchQueued(true);
 }
 
 async function readPhoto(file) {
@@ -308,17 +308,26 @@ async function lookup(photo) {
 // Match the queued photos one at a time, oldest first, redrawing the roll after each. It stops at the
 // first failure that isn't the photo's own (offline, search down, over the per-minute limit): the rest
 // would fail the same way. Over the limit, it carries on by itself once the server says it may.
+// `told`: the person started this pass (Retry, or a batch), so it reports how it went. Page load and
+// coming back online stay quiet, apart from the over-the-limit wait.
 let retrying = false;
+let again = null; // a call that came in mid-pass, for photos the pass didn't list: {told}
 let waitSec = 0; // set by a 429's Retry-After
 let resume = null;
-async function matchQueued() {
-  if (retrying) return;
+async function matchQueued(told = false) {
+  if (retrying) {
+    again = { told: told || !!again?.told };
+    return;
+  }
   retrying = true;
+  again = null;
   clearTimeout(resume);
   waitSec = 0;
   const retry = $("retry");
   retry.disabled = true;
-  let outcome = null;
+  let failure = null;
+  let matched = 0;
+  let removed = 0;
   try {
     const ids = (await allPhotos()).filter((p) => p.state === "queued").map((p) => p.id);
     for (const [n, id] of ids.entries()) {
@@ -326,10 +335,14 @@ async function matchQueued() {
       // Re-read: since the list was read, a capture may have matched it (and a pick changed) or removed it.
       const photo = inFlight.has(id) ? null : await getPhoto(id);
       if (photo?.state !== "queued" || inFlight.has(id)) continue;
-      outcome = await lookup(photo);
+      const outcome = await lookup(photo);
       if (!$("roll").hidden) await renderRoll();
-      if (outcome !== "matched" && (await getPhoto(id))) break; // still queued: not this photo's fault
-      outcome = null;
+      if (outcome === "matched") matched++;
+      else if (!(await getPhoto(id))) removed++; // unreadable, or no talk matched: lookup removed it
+      else {
+        failure = outcome; // still queued: not this photo's fault
+        break;
+      }
     }
   } finally {
     retrying = false;
@@ -338,16 +351,25 @@ async function matchQueued() {
   }
   if (!$("roll").hidden) renderRoll();
   if (!$("capture").hidden) renderRollThumb();
+  told ||= !!again?.told;
   if (waitSec) {
-    resume = setTimeout(matchQueued, waitSec * 1000);
+    again = null; // the resumed pass lists everything still queued
+    resume = setTimeout(() => matchQueued(told), waitSec * 1000);
     retry.textContent = "Retry now";
     toast(`That's a lot of photos at once. Matching the rest in ${waitSec} s.`);
-  } else if (outcome) {
-    toast(outcome);
+  } else if (failure) {
+    again = null;
+    if (told) toast(failure);
+  } else if (again) {
+    return matchQueued(told); // photos added mid-pass. The next pass reports on its own photos.
+  } else if (told && removed) {
+    toast(`Matched ${plural(matched, "photo")}. ${plural(removed, "photo")} didn't match a talk and ${removed === 1 ? "was" : "were"} removed.`);
+  } else if (told && matched > 1) {
+    say(`Matched ${plural(matched, "photo")}.`);
   }
 }
-addEventListener("online", matchQueued);
-$("retry").onclick = matchQueued;
+addEventListener("online", () => matchQueued());
+$("retry").onclick = () => matchQueued(true);
 
 // Match
 let current = null;
