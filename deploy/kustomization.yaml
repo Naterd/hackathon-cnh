@@ -11,4 +11,4 @@ resources:
 images:
   - name: app
     newName: ghcr.io/naterd/hackathon-cnh
-    newTag: 37aa6ba
+    newTag: a0de595
