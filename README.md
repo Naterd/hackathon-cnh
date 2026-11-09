@@ -48,6 +48,25 @@ Dash0 trial organization, region AWS `us-west-2`, dataset `default`.
 - **Browser monitoring:** add Dash0's web SDK script to `base.html`, and allow `https://ingress.us-west-2.aws.dash0.com` in the page's CSP `connect-src`.
 - **The API token never goes in this repo or the image.** The repo is public.
 
+**Ingest telemetry: `ingest/telemetry.py`.** Use it in the ingest code to measure each Job:
+
+```python
+from ingest import telemetry
+
+with telemetry.talk(video_id):              # span ingest.talk; ERROR if the block raises
+    with telemetry.phase("scene_detect"):   # child span ingest.scene_detect
+        ...
+    telemetry.stills(kept=41, dropped=12)
+    with telemetry.phase("index"):
+        telemetry.docs(indexed=40, rejected=1)  # count bulk *items*: bulk returns 200 even when items fail
+telemetry.flush()                           # also runs at exit
+```
+
+- Use the phase names `read`, `scene_detect`, `stills`, `ocr`, `captions` and `index`, so the dashboard's per-phase panel lines up.
+- **Don't add OpenTelemetry packages to the ingest image.** The operator injects the SDK, and turns itself off if it finds OpenTelemetry already installed. Without the SDK, for example run locally, every call is a no-op.
+- Label each Job's pod template with `app.kubernetes.io/name: slidekick-ingest`, which becomes its service name in Dash0. Jobs are instrumented when they're created.
+- Talks per minute and time per phase come from the spans, so there are no extra metrics for them. The module adds two counters: `slidekick.ingest.stills` and `slidekick.ingest.docs`, each with an `outcome` attribute.
+
 **Getting the API token (for you or your agent).** Use the copy in the cluster, not a chat or a file in the repo. You need `kubectl` access to `cnh`:
 
 ```bash
@@ -59,7 +78,7 @@ curl -s -H @"$HOME/.dash0-auth-header" "https://api.us-west-2.aws.dash0.com/api/
 
 The header file keeps the token out of command lines, shell history and agent output. Agents: never print the token or paste it into a commit, PR or chat. Any Dash0 API call takes `-H @"$HOME/.dash0-auth-header"` plus `?dataset=default`. For example, PromQL goes to `GET /api/prometheus/api/v1/query?dataset=default&query=…`. The trial token can read and write dashboards, check rules, SLOs and synthetic checks.
 
-**Dashboard: "SlideKick: Four Golden Signals"** has one section for the app and one for ingest, each covering latency, traffic, errors and saturation. Latency, traffic and errors come from Dash0's span metrics (`dash0_spans_total`, `dash0_spans_duration_seconds_bucket`), filtered by `k8s_namespace_name`, `otel_span_kind` and `otel_span_status_code`. Saturation comes from the pods' CPU and memory against their limits, and from ready nodes. The panels stay empty until instrumented code is running.
+**Dashboard: "SlideKick: Four Golden Signals"** has one section for the app and one for ingest, each covering latency, traffic, errors and saturation. A third section, **ingest: pipeline**, is built from `ingest/telemetry.py`: talks per minute by status, time per talk, p95 per phase, documents indexed vs rejected, and stills kept vs dropped. Latency, traffic and errors come from Dash0's span metrics (`dash0_spans_total`, `dash0_spans_duration_seconds_bucket`), filtered by `k8s_namespace_name`, `otel_span_kind` and `otel_span_status_code`. Saturation comes from the pods' CPU and memory against their limits, and from ready nodes. The panels stay empty until instrumented code is running.
 
 - **Open it:** [app.dash0.com](https://app.dash0.com), then **Dashboards** > *SlideKick: Four Golden Signals*.
 - **API:** `GET https://api.us-west-2.aws.dash0.com/api/dashboards/slidekick-golden-signals?dataset=default`. To update it, `PUT` the edited JSON to the same URL.
