@@ -9,12 +9,6 @@ SlideKick is a one-day hackathon project by a team of three. A phone photo of a 
 - Check that the diff does what the PR description says. Flag claims like "tested" or "verified on the cluster" when the diff doesn't support them.
 - When unsure whether something is a bug, say so and give the reason rather than guessing.
 
-## Which agent notes apply
-
-Gitar also reads `AGENTS.md` (`CLAUDE.md` only includes it).
-- The two team rules at the top of `AGENTS.md` apply: pull before every commit, and large changes go through a PR.
-- The rest of `AGENTS.md` and `.agents/skills/` came from the Radar starter and describe the hackathon's shared vcluster: `team-__TEAM__`, the 2 CPU / 4 GiB budget, the HTTPRoute, and passing `cluster` on Radar calls. We run on our own GKE cluster `cnh`, with the app in namespace `slidekick` and ingest Jobs in `ingest`. Don't report findings based on the vcluster limits.
-
 ## Blocking
 
 Report these as blocking review findings.
@@ -35,7 +29,7 @@ Report these as blocking review findings.
 
 ## Worth a comment, not blocking
 
-- **Dash0 labels.** New workloads need `app.kubernetes.io/name` and `app.kubernetes.io/version`; ingest Jobs use `app.kubernetes.io/name: slidekick-ingest`. Dash0's operator injects OpenTelemetry automatically, so flag a hand-rolled SDK setup, or an OTLP protocol other than `http/protobuf`.
+- **Dash0 labels.** New workloads need `app.kubernetes.io/name` and `app.kubernetes.io/version`; ingest Jobs use `app.kubernetes.io/name: slidekick-ingest`. Dash0's operator injects OpenTelemetry automatically and turns itself off if the image already has any `opentelemetry-*` package, so flag one in requirements or the Dockerfile, a hand-rolled SDK setup, or an OTLP protocol other than `http/protobuf`.
 - **Elasticsearch HTTP 400s and 429s.** Count them, and retry throttled bulk items rather than dropping them.
 - **Accessibility** (the demo uses VoiceOver): every control has a label, results are announced through an `aria-live` region, and images have alt text.
 - **Camera roll.** Read EXIF `DateTimeOriginal` before drawing the photo to a canvas, because the canvas drops it. A time without an offset is Mountain Time. Don't rely on GPS.

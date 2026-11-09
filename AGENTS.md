@@ -41,11 +41,10 @@ Judged: AI investigations, Radar's MCP server for shipping, syncing Argo CD and 
 
 - Radar runs in namespace `radar` and reports to our own Radar Cloud organization. Connect with `claude mcp add --scope user radar-cloud --transport http https://api.radarhq.io/mcp` and pick our organization when signing in.
 - Call `list_clusters` once per session and pass our cluster's `id` as `cluster` on every call. Read each tool's schema; don't invent parameters.
-- **After a merge:** confirm the Action's deploy commit, sync with `manage_gitops` (`tool: argocd`, `action: sync`, `namespace: argocd`, `name: slidekick`), check the synced revision matches `origin/main`, `wait_for` Deployment `app` in `slidekick`, then check that https://slidekick.us shows the new version. A healthy old revision isn't proof.
-- **When something fails:** read the evidence first (`issues`, `get_changes`, events, logs; `diagnose` bundles them), name the cause, then fix it in git.
+- **After a merge:** the `ship` skill. Sync through Radar, wait for the rollout, and check that https://slidekick.us shows the new version. A healthy old revision isn't proof.
+- **When something fails:** the `debug-failure` skill. Read the evidence first, name the cause, then fix it in git.
 - **A symptom you can't explain:** suggest a Radar AI investigation. Start one only when the person asks.
 - **Before the demo:** review Checks (`get_cluster_audit`) for `slidekick` and `ingest`. Fix what applies to our workloads, or say why it doesn't.
-- `.agents/skills/` came from the starter and assumes the hackathon's vcluster. Read `team-<team>` as `slidekick` and `<team>.cnh.radarhq.io` as `slidekick.us`. Skip `get-started` and `scripts/setup.sh`.
 
 ## Dash0 (observability track)
 
@@ -77,8 +76,19 @@ Judged: storing data, Jina embeddings through Elastic's inference service, keywo
 - Index mapping changes go through a PR. Bulk returns HTTP 200 even when items fail: check each item, and retry 429s.
 - Elastic's agent skills: https://github.com/elastic/agent-skills.
 
+## Skills
+
+`.agents/skills/` has five procedures. Claude Code and Codex load them as skills; with another agent, read the matching `SKILL.md` first.
+- `get-started`: connect a teammate's tools, and what's left for the day.
+- `ship`: after a merge, prove the new version is live.
+- `debug-failure`: from a symptom to the root cause and a fix in git.
+- `canary-release`: ship as an Argo Rollouts canary, then promote or abort.
+- `demo-story`: the 5:30 story across all four tracks.
+
 ## Never
 
+- Apply a second Argo CD Application for `deploy/`. Two would fight over the same resources.
+- Run `scripts/setup.sh`. It's for the hackathon's shared clusters.
 - Touch another GCP project, cluster or repo.
 - Generate load you can't bound. The spot pool scales to 256 vCPUs, so size ingest Jobs deliberately. Don't fetch from YouTube again; it rate-limits within hours.
 - Store or serve the talk videos or deck PDFs ourselves. Link to them.
