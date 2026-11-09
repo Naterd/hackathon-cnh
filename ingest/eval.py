@@ -205,8 +205,10 @@ def main():
     for r in [r for r in results if not r["talk1"]][:15]:
         print(f"miss: {r['talk_id']} @{r['t']}s mode={r['mode']} layout={r['layout']} "
               f"ocr_words={r['ocr_words']} got={r['got']}")
-    if a.min_talk1 is not None and summary["all"]["talk@1"] < a.min_talk1:
-        raise SystemExit(f"talk@1 {summary['all']['talk@1']} is below {a.min_talk1}")
+    if a.min_talk1 is not None:
+        talk1 = sum(r["talk1"] for r in results) / len(cases)  # a photo that errored counts as a miss
+        if talk1 < a.min_talk1 or errors > 0.1 * len(cases):
+            raise SystemExit(f"talk@1 {talk1:.3f} with {errors} errors: below {a.min_talk1}, or over 10% errors")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 name: ingest-ci
 # For PRs that touch the ingest: a smoke test (extract and index 4 edge-case talks into a scratch
 # index) and an accuracy gate (the random phone-photo test against the live index). Both run as
-# Jobs on GKE, driven by our self-hosted runners (ci/arc/); the runner itself does little work.
+# Jobs on GKE in namespace ingest-ci, driven by our self-hosted runners (ci/arc/). That namespace has a
+# restricted Elasticsearch key and bucket access of its own: ci/arc/rbac.yaml says why.
 on:
   pull_request:
     paths:
@@ -12,11 +13,11 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: ingest-ci            # one run at a time: CI Jobs share the -ci names
+  group: ingest-ci            # one run at a time: CI Jobs share their names
   cancel-in-progress: false
 env:
   CNH_BUCKET: cnh-kubecon-media-f21b83
-  JOB_SUFFIX: -ci
+  INGEST_NS: ingest-ci
   # a breakout, a terminal-heavy talk, a stage keynote and a lightning talk
   SMOKE_TALKS: 9RvDczVIiS0,Mj04QOqAaJ8,4d4X8S4Zeks,Cakv3miyVr4
 jobs:

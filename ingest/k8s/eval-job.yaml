@@ -2,8 +2,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ingest-eval__SUFFIX__
-  namespace: ingest
+  name: ingest-eval
+  namespace: __NS__
   labels: {app: ingest, step: eval, purpose: cnh-hackathon, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
 spec:
   backoffLimit: 0
@@ -34,4 +34,4 @@ spec:
             driver: gcsfuse.csi.storage.gke.io
             volumeAttributes: {bucketName: __BUCKET__, mountOptions: "implicit-dirs,uid=1000,gid=1000"}
         - name: code
-          configMap: {name: ingest-code__SUFFIX__}
+          configMap: {name: ingest-code}

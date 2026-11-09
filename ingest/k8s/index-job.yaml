@@ -3,8 +3,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: ingest-index__SUFFIX__
-  namespace: ingest
+  name: ingest-index
+  namespace: __NS__
   labels: {app: ingest, step: index, purpose: cnh-hackathon, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
 spec:
   backoffLimit: 1
@@ -36,4 +36,4 @@ spec:
             readOnly: true
             volumeAttributes: {bucketName: __BUCKET__, mountOptions: "implicit-dirs"}
         - name: code
-          configMap: {name: ingest-code__SUFFIX__}
+          configMap: {name: ingest-code}
