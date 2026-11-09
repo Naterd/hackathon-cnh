@@ -20,6 +20,21 @@ Re-running is cheap. Extract skips finished talks unless `--force`, and index ov
 
 Each score is broken down by photo mode and talk layout. The modes are `screen` (the whole video frame, as when photographing a laptop playing the talk, which is the demo) and `slide` (only the slide, as at the venue). Missed photos are saved to `gs://<bucket>/eval/<run>/`. The test runs as one pod on the spot pool: `ingest/run.sh eval --n 200`. Point `--index` at `kubecon-moments-v2` to compare index versions before moving the alias. `--min-talk1` makes it fail below a threshold, for CI.
 
+## Talk details for the app
+
+`kubecon-details` holds what the app shows but never searches. It uses the same ids as `kubecon-moments` and has no semantic fields, so it needs no inference:
+- **Per talk, from Sched:** the slot, the room, structured speakers, a clean title, and the deck links.
+- **Per still:** a 320 px thumbnail and the slide's title.
+
+Don't add these fields to `kubecon-moments` instead. An update there re-runs inference on the whole document, and when Elastic throttles it the document is stored without its vectors.
+
+```bash
+python ingest/sched.py --out sched.json    # needs ELASTIC_URL and ELASTIC_ES_API_KEY; one iCal feed and one list page from Sched
+gcloud storage cp sched.json gs://$CNH_BUCKET/derived/sched/kubecon-na-2024.json
+ingest/run.sh thumbs                       # one pod per talk: thumbnails and slide titles, about 10 minutes
+ingest/run.sh details                      # one pod loads it all into kubecon-details
+```
+
 ## Running it
 
 ```bash

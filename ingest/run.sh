@@ -4,15 +4,20 @@
 #   ingest/run.sh extract [--limit N] [--talks id,id] [--parallel P] [--force]
 #   ingest/run.sh index   [--index NAME] [--alias kubecon-moments] [--limit N] [--talks id,id] [--replace]
 #   ingest/run.sh eval    [--n 200] [--seed 1] [--index kubecon-moments] [--min-talk1 0.5]
-#   ingest/run.sh wait    extract|index|eval     # until the Job finishes; prints logs; exit 1 if it failed
+#   ingest/run.sh thumbs  [--talks id,id] [--force]
+#   ingest/run.sh details [--index kubecon-details]
+#   ingest/run.sh wait    extract|index|eval|thumbs|details   # until the Job finishes; prints logs; exit 1 if it failed
 #   ingest/run.sh status
-#   ingest/run.sh logs    extract|index|eval
+#   ingest/run.sh logs    extract|index|eval|thumbs|details
 #
 # extract: one pod per talk cuts slide stills, OCRs them and attaches captions, writing to
 #          gs://$CNH_BUCKET/derived/$DERIVED/$CNH_EVENT/<id>/. Finished talks are skipped unless --force.
 # index:   one pod loads everything extracted so far into Elasticsearch (Secret ingest/elastic).
 # eval:    one pod renders N random moments as phone photos, runs the app's lookup on each and
 #          prints accuracy; the photos it got wrong land in gs://$CNH_BUCKET/eval/<run>/.
+# thumbs:  one pod per extracted talk makes a thumbnail and a slide title for each still (details.json).
+# details: one pod loads those and gs://$CNH_BUCKET/derived/sched/$CNH_EVENT.json (ingest/sched.py) into
+#          kubecon-details, which has no semantic fields: no inference, so Elastic's limits don't apply.
 #
 # Needs CNH_BUCKET, and kubectl on the cnh cluster: source the hackathon infra/config.env. Inside the
 # cluster (the CI runners) kubectl uses the pod's service account instead.
@@ -40,6 +45,7 @@ STEP=extract
 [[ $cmd == logs || $cmd == wait ]] && [[ -n ${1:-} ]] && { STEP=$1; shift; }
 LIMIT="" TALKS="" PARALLEL=96 FORCE=0 INDEX=kubecon-moments-$DERIVED ALIAS="" REPLACE=0 N=200 SEED=1 MIN_TALK1=""
 [[ $cmd == eval ]] && INDEX=kubecon-moments
+[[ $cmd == thumbs || $cmd == details ]] && INDEX=kubecon-details
 while (( $# )); do
   case $1 in
     --limit)     LIMIT=$2; shift ;;
@@ -66,7 +72,7 @@ render() {  # template file, then KEY=value pairs
 
 ship_code() {
   kubectl -n $NS create configmap "ingest-code" --from-file=extract.py --from-file=index.py \
-    --from-file=telemetry.py --from-file=eval.py --from-file=requirements.txt \
+    --from-file=telemetry.py --from-file=eval.py --from-file=details.py --from-file=requirements.txt \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
@@ -115,6 +121,25 @@ case $cmd in
       N="$N" SEED="$SEED" RUN="$run" ARGS="$args" | kubectl apply -f -
     echo "eval of $N photos against $INDEX (run $run). Follow it: ingest/run.sh logs eval"
     ;;
+  thumbs|details)
+    if [[ $cmd == details ]]; then
+      count=1 ids=""
+    elif [[ -n $TALKS ]]; then
+      ids=$(tr ',' '\n' <<<"$TALKS")
+    else
+      ids=$(gcloud storage ls "gs://$CNH_BUCKET/derived/$DERIVED/$EVENT/*/segments.json" | awk -F/ '{print $(NF-1)}' | sort -u)
+    fi
+    [[ $cmd == thumbs ]] && count=$(grep -c . <<<"$ids") && (( PARALLEL > count )) && PARALLEL=$count
+    [[ $cmd == details ]] && PARALLEL=1
+    ship_code
+    # its own talk list: a running extract Job reads ingest-talks by completion index
+    kubectl -n $NS create configmap "ingest-talks-$cmd" --from-literal=talks.txt="$ids" \
+      --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    kubectl -n $NS delete job "ingest-$cmd" --ignore-not-found >/dev/null
+    render k8s/details-job.yaml STEP="$cmd" COUNT="$count" PARALLEL="$PARALLEL" IMAGE="$IMAGE" EVENT="$EVENT" \
+      DERIVED="$DERIVED" BUCKET="$CNH_BUCKET" FORCE="$FORCE" INDEX="$INDEX" | kubectl apply -f -
+    echo "$cmd: $count pods, $PARALLEL at a time, into $INDEX. Follow it: ingest/run.sh logs $cmd"
+    ;;
   wait)
     job=ingest-$STEP state=timeout
     for _ in $(seq 1 "${WAIT_TRIES:-180}"); do  # 10 s apart: 30 minutes
@@ -137,5 +162,5 @@ case $cmd in
     kubectl -n $NS logs -l "job-name=ingest-$STEP" -c "$STEP" --tail=80 --prefix --max-log-requests 20
     ;;
   *)
-    sed -n '2,22p' "$0"; exit 2 ;;
+    sed -n '2,27p' "$0"; exit 2 ;;
 esac

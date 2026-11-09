@@ -1,0 +1,187 @@
+"""Extras the app needs that involve no embeddings, in their own index, kubecon-details.
+
+Per still: a 320 px thumbnail for the deck strip, the slide's title for labels and alt text, and `fp`, a tiny
+pixel fingerprint the lookup matches with native kNN (no inference), plus what a result needs (time, url, title).
+Per talk: the Sched slot and room, structured speakers, a clean title and the deck links (ingest/sched.py).
+Ids match kubecon-moments (<vid>-NNN, <vid>-talk), so the app fetches extras with one _mget.
+Why not add these fields to kubecon-moments: any update there re-runs inference on the whole document,
+and while Elastic throttled us it stored the document without its vectors (seen Nov 9).
+
+  thumbs   one pod per talk (Indexed Job): writes <derived>/<id>/details.json
+  details  one pod: loads every details.json and the Sched file into the index
+"""
+import argparse
+import base64
+import concurrent.futures as cf
+import io
+import json
+import os
+import re
+import sys
+import time
+from pathlib import Path
+
+import cv2
+import numpy as np
+from PIL import Image
+
+from index import ES, log, send as bulk_send
+
+THUMB_PX, THUMB_QUALITY = 320, 70
+LOGO = re.compile(r"kube|cloudnat|nativecon|america|20\d\d", re.I)  # the event logo in a slide's top corner
+MAPPINGS = {"properties": {
+    "source": {"type": "keyword"}, "event": {"type": "keyword"}, "talk_id": {"type": "keyword"},
+    "n": {"type": "integer"}, "start_sec": {"type": "float"}, "end_sec": {"type": "float"},
+    "url": {"type": "keyword", "index": False}, "title": {"type": "text"}, "speakers_text": {"type": "text"},
+    "thumb": {"type": "binary"}, "slide_title": {"type": "text"},
+    # unit length, so dot_product; plain float HNSW: at 12k vectors quantizing buys nothing
+    "fp": {"type": "dense_vector", "dims": 576, "similarity": "dot_product", "index": True,
+           "index_options": {"type": "hnsw"}},
+    "title_clean": {"type": "text", "fields": {"raw": {"type": "keyword", "ignore_above": 512}}},
+    "starts_at": {"type": "date"}, "ends_at": {"type": "date"},
+    "room": {"type": "keyword"}, "track": {"type": "keyword"},
+    "speakers": {"properties": {"name": {"type": "text", "fields": {"raw": {"type": "keyword"}}},
+                                "position": {"type": "text"}, "company": {"type": "keyword"}}},
+    "decks": {"type": "object", "enabled": False}, "sched_url": {"type": "keyword", "index": False}}}
+
+_ocr = None
+
+
+def _init():
+    global _ocr
+    from rapidocr_onnxruntime import RapidOCR
+    _ocr = RapidOCR()
+
+
+def slide_title(path):
+    """The biggest line of text in the top third, without the event logo: usually the slide's title."""
+    im_h = Image.open(path).height
+    lines = []
+    for box, text, conf in (_ocr(str(path))[0] or []):
+        ys = [p[1] for p in box]
+        if min(ys) < im_h / 3 and float(conf) > 0.6 and len(re.findall(r"[A-Za-z]", text)) >= 3 and not LOGO.search(text):
+            lines.append((max(ys) - min(ys), min(ys), min(p[0] for p in box), text))
+    if not lines:
+        return ""
+    tallest = max(h for h, *_ in lines)
+    row = min(y for h, y, *_ in lines if h >= 0.85 * tallest)
+    # a title often comes back as several boxes on one row: join them left to right
+    same_row = [l for l in lines if l[0] >= 0.6 * tallest and abs(l[1] - row) < tallest / 2]
+    title = " ".join(l[3] for l in sorted(same_row, key=lambda l: l[2]))
+    # OCR drops spaces in big type ("WhichSolutionIsBestForYou?"): split long words at case changes,
+    # leaving short names like OpenTelemetry alone
+    return " ".join(re.sub(r"(?<=[a-z])(?=[A-Z])", " ", w) if len(w) > 15 else w for w in title.split())[:200]
+
+
+def thumb(path):
+    im = Image.open(path).convert("RGB")
+    im.thumbnail((THUMB_PX, THUMB_PX))
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=THUMB_QUALITY, optimize=True)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def one_still(talk_dir, seg):
+    path = Path(talk_dir) / seg["still"]
+    return {"n": seg["n"], "start_sec": seg["start"], "thumb": thumb(path), "slide_title": slide_title(path)}
+
+
+def thumbs(a):
+    vid = a.talk or Path(a.talks).read_text().split()[int(os.environ["JOB_COMPLETION_INDEX"])]
+    d = Path(a.derived) / vid
+    out = d / "details.json"
+    if out.exists() and not a.force and out.stat().st_mtime >= (d / "segments.json").stat().st_mtime:
+        log(f"{vid}: done already")
+        return
+    segs = json.loads((d / "segments.json").read_text())
+    t0 = time.time()
+    with cf.ProcessPoolExecutor(int(os.environ.get("WORKERS", 2)), initializer=_init) as ex:
+        stills = list(ex.map(one_still, [d] * len(segs), segs))
+    out.write_text(json.dumps({"talk_id": vid, "stills": stills}))
+    log(f"{vid}: {len(stills)} stills in {time.time() - t0:.0f}s, "
+        f"{sum(bool(s['slide_title']) for s in stills)} with a title, "
+        f"thumbs {sum(len(s['thumb']) for s in stills) * 3 // 4 // max(1, len(stills)) // 1024} KB each")
+
+
+def fingerprint(path):
+    """32x18 grayscale, mean-centred, unit length: a pixel match for the lookup that needs no inference.
+    docs/search_example.py must compute it the same way. None for a blank still (no direction to compare)."""
+    bgr = cv2.imdecode(np.fromfile(str(path), np.uint8), cv2.IMREAD_COLOR)
+    g = cv2.resize(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), (32, 18), interpolation=cv2.INTER_AREA).astype(np.float32).ravel()
+    g -= g.mean()
+    norm = np.linalg.norm(g)
+    return None if norm < 1.0 else (g / (norm + 1e-6)).round(6).tolist()
+
+
+def talk_frames(talk_dir, event):
+    vid = talk_dir.name
+    if (talk_dir / "details.json").stat().st_mtime < (talk_dir / "segments.json").stat().st_mtime:
+        log(f"{vid}: details.json predates the last extract, stills skipped; run.sh thumbs remakes it")
+        return []
+    talk = json.loads((talk_dir / "talk.json").read_text())
+    segs = {s["n"]: s for s in json.loads((talk_dir / "segments.json").read_text())}
+    docs = []
+    for s in json.loads((talk_dir / "details.json").read_text())["stills"]:
+        seg = segs.get(s["n"])
+        if not seg:  # details.json predates a re-extract: run.sh thumbs remakes it
+            log(f"{vid}: still {s['n']} is no longer in segments.json, skipped")
+            continue
+        doc = {"source": "frame", "event": event, "talk_id": vid, **s, "end_sec": seg["end"],
+               "url": f"https://youtu.be/{vid}?t={int(seg['start'])}",  # as index.py builds it
+               "title": talk["title"], "speakers_text": talk["speakers_text"]}
+        fp = fingerprint(talk_dir / seg["still"])
+        if fp:
+            doc["fp"] = fp
+        docs.append((f"{vid}-{s['n']:03d}", doc))
+    return docs
+
+
+def load(a):
+    es = ES()
+    status, _ = es.call("HEAD", f"/{a.index}")
+    if status == 404:
+        status, body = es.call("PUT", f"/{a.index}", {"mappings": MAPPINGS})
+        if status != 200:
+            sys.exit(f"create {a.index}: HTTP {status} {str(body)[:300]}")
+    sched = json.loads(Path(a.sched).read_text()) if a.sched and Path(a.sched).exists() else {}
+    loaded = failed = 0
+
+    def send(docs):
+        nonlocal loaded, failed
+        if docs:
+            ok, bad = bulk_send(es, a.index, docs)  # retries throttled items, counts each one
+            loaded, failed = loaded + ok, failed + bad
+
+    send([(f"{vid}-talk", {"source": "talk", "event": a.event, "talk_id": vid, **s}) for vid, s in sched.items()])
+    talks = sorted(f.parent for f in Path(a.derived).glob("*/details.json"))
+    batch = []
+    with cf.ThreadPoolExecutor(16) as ex:  # reading stills through gcsfuse is the slow part
+        for docs in ex.map(talk_frames, talks, [a.event] * len(talks)):
+            batch += docs
+            if len(batch) >= 300:
+                send(batch)
+                batch = []
+    if batch:
+        send(batch)
+    log(f"loaded {loaded}/{loaded + failed} docs into {a.index}: {len(sched)} talks with Sched data, "
+        f"stills from {len(talks)} talks")
+    if failed:
+        sys.exit(1)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("step", choices=["thumbs", "details"])
+    ap.add_argument("--derived", required=True, help="extract.py output: <id>/segments.json and stills/")
+    ap.add_argument("--talks", help="one video id per line; thumbs uses line JOB_COMPLETION_INDEX")
+    ap.add_argument("--talk", help="one video id, instead of --talks")
+    ap.add_argument("--sched", help="ingest/sched.py output")
+    ap.add_argument("--event", default="kubecon-na-2024")
+    ap.add_argument("--index", default="kubecon-details")
+    ap.add_argument("--force", action="store_true", default=os.environ.get("FORCE") == "1")
+    a = ap.parse_args()
+    thumbs(a) if a.step == "thumbs" else load(a)
+
+
+if __name__ == "__main__":
+    main()

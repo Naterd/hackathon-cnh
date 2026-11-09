@@ -102,16 +102,44 @@ It works well for the networking talk, less well for others. Every description o
 
 - **Read the time first:** read EXIF `DateTimeOriginal` in the browser before drawing to a canvas, which drops EXIF. A time without an offset is Mountain Time. Don't rely on GPS.
 - **Look up each photo** as above, a few at a time, and stream each result onto the timeline as it arrives.
-- **2024 photos** belong on the timeline at their talk's 2024 slot, which isn't in the index yet (see the gaps below). Until then, order them by the photo's own time.
+- **2024 photos** belong on the timeline at their talk's 2024 slot: `starts_at` in `kubecon-details`.
+
+## Talk details and slide thumbnails (`kubecon-details`)
+
+A second index for the extras that need no embeddings. It has the same ids as `kubecon-moments`, so after a lookup one `_mget` fetches them. It has no semantic fields, so Elastic's inference limits never apply to it.
+
+**Never write to `kubecon-moments` from the app.** Even a partial update re-runs inference on the whole document. While Elastic throttled us, an update stored a still without its vectors and still answered `"result": "updated"` (Nov 9).
+
+| Field | On | Holds |
+| --- | --- | --- |
+| `title_clean` | talk | The Sched title without the " - Speaker, Company" suffix |
+| `starts_at`, `ends_at` | talk | The 2024 slot, ISO time with the Mountain Time offset, for example `2024-11-13T15:25:00-07:00` |
+| `room` | talk | For example `Salt Palace \| Level 3 \| 355 E` |
+| `track` | talk | Sched's category, for example `Maintainer Track` |
+| `speakers` | talk | `[{"name", "position", "company"}]`, from each speaker's Sched profile. Where Sched has no profiles (some lightning talks), names come from the session title and `position` is empty. |
+| `decks` | talk | `[{"name", "url"}]`: the slides uploaded to Sched. Link to them; never serve the PDFs. |
+| `sched_url` | talk | The session's Sched page |
+| `thumb` | still | A 320 px JPEG, base64 without a prefix, 6–10 KB: `<img src="data:image/jpeg;base64,{thumb}">` |
+| `slide_title` | still | The slide's biggest line of text near the top, for labels and alt text. It's empty for title cards and slides without a clear title. |
+| `n`, `start_sec`, `end_sec`, `url`, `title`, `speakers_text` | still | The same values as in `kubecon-moments`, so a hit here builds a result without a second fetch |
+| `fp` | still | A 576-number pixel fingerprint (32×18 grayscale, mean-centred, unit length) for a native kNN leg that needs no inference. `fingerprint()` in `ingest/details.py` defines it, and the query side must compute it the same way. Blank stills have none. Exclude it from `_source`. |
+
+```json
+GET kubecon-details/_mget
+{"ids": ["9RvDczVIiS0-talk", "9RvDczVIiS0-008"]}
+
+POST kubecon-details/_search
+{"size": 60, "query": {"bool": {"filter": [{"term": {"talk_id": "9RvDczVIiS0"}}, {"term": {"source": "frame"}}]}},
+ "sort": [{"n": "asc"}], "_source": ["n", "start_sec", "thumb", "slide_title"]}
+```
+
+The second query is the deck strip: a whole talk's thumbnails in one request, about 300 KB for 32 slides.
+
+Coverage: 361 of the 370 talks have Sched data, 315 of them with speakers and 206 with a deck. The other nine are the daily highlight reels and a few co-located-event talks that aren't on this Sched; they have no talk document here, so fall back to `title` and `speakers_text` from `kubecon-moments`. To refresh: `ingest/sched.py` writes the JSON to `gs://<bucket>/derived/sched/kubecon-na-2024.json`, then `ingest/run.sh details` reloads the index.
 
 ## Not in the index yet
 
-These wait for the v2 ingest, which runs once the frontend settles what it needs. Tell Nate which matter:
-
-- The 2024 schedule slot and room for each talk (from the Sched feed), for the timeline
-- Clean speaker names, and links to the slide decks on Sched
 - Descriptions with the CNCF boilerplate stripped
-- Stored alt text for each still. Today it would be generated at query time.
 - Photos users upload (`source: photo`, `roll_id`, `taken_at`), so a timeline can be reopened
 - This week's 2026 sessions and decks
 
