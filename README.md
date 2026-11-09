@@ -98,12 +98,12 @@ Judged on: features landing through PRs Gitar reviewed; review instructions **an
 
 - [x] The Gitar app reviews every PR ([#1](https://github.com/Naterd/hackathon-cnh/pull/1) to [#13](https://github.com/Naterd/hackathon-cnh/pull/13))
 - [x] Review instructions in [`.gitar/review/main.md`](.gitar/review/main.md)
-- [x] Real findings acted on: [#4](https://github.com/Naterd/hackathon-cnh/pull/4) → [#5](https://github.com/Naterd/hackathon-cnh/pull/5) (duplicate Argo CD Application), [#9](https://github.com/Naterd/hackathon-cnh/pull/9) (key-file permissions), [#13](https://github.com/Naterd/hackathon-cnh/pull/13) (story timestamps)
+- [x] Real findings acted on, for example: [#4](https://github.com/Naterd/hackathon-cnh/pull/4) → [#5](https://github.com/Naterd/hackathon-cnh/pull/5) (duplicate Argo CD Application), [#19](https://github.com/Naterd/hackathon-cnh/pull/19) (a 300 KB PNG that broke `kubectl apply`), [#17](https://github.com/Naterd/hackathon-cnh/pull/17) (bulk indexing dropped throttled items)
 - [x] PR CI for ingest: `ingest-ci` on our GKE runners ([#11](https://github.com/Naterd/hackathon-cnh/pull/11))
 - [x] Repository rules in [`.gitar/rules/`](.gitar/rules/): `deploy-changes` and `index-mapping` ([#15](https://github.com/Naterd/hackathon-cnh/pull/15))
 - [x] PR CI for the app: `app-ci` (smoke test plus image build) on GitHub-hosted runners ([#15](https://github.com/Naterd/hackathon-cnh/pull/15))
 - [x] Auto-apply turned on: `gitar auto-apply:on` on [#16](https://github.com/Naterd/hackathon-cnh/pull/16), and Gitar's review reports "Auto-apply is on". Keep doing it on each feature PR.
-- [x] **Gitar fixed a real problem with auto-apply** on [#16](https://github.com/Naterd/hackathon-cnh/pull/16): its review found that huge-pixel uploads could OOM the pod, it pushed the fix itself ([`a8db50f`](https://github.com/Naterd/hackathon-cnh/commit/a8db50f), "reject unsafe uploaded images"), and we refined it afterwards (`search.BadPhoto`)
+- [x] **Gitar fixed real problems itself:** on [#16](https://github.com/Naterd/hackathon-cnh/pull/16) its review found that huge-pixel uploads could OOM the pod and it pushed the fix with auto-apply ([`a8db50f`](https://github.com/Naterd/hackathon-cnh/commit/a8db50f); we refined it with `search.BadPhoto`), and on [#3](https://github.com/Naterd/hackathon-cnh/pull/3) it narrowed its own placeholder exemption so deploy manifests still pointing at `team-__TEAM__` would be reviewed ([`b808686`](https://github.com/Naterd/hackathon-cnh/commit/b808686)). Gitar has also found 13 other problems that we fixed before merging, across #3, #8, #9, #11, #13, #16, #17 and #19.
 - [ ] *(bonus)* Gitar diagnoses a real **CI failure**. No PR's CI has failed yet, so this hasn't come up. Don't break CI on purpose. Owner: team.
 
 ### Dash0: Stop Flying Blind
