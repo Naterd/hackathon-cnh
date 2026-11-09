@@ -86,7 +86,7 @@ STILL_ID = re.compile(r"[A-Za-z0-9_-]{11}-\d{3}")
 async def slide(still_id: str):
     if not STILL_ID.fullmatch(still_id):
         raise HTTPException(404, "No such slide")
-    media_type, image = await call(search.slide, still_id)
+    media_type, image = await call(search.slide, still_id, missing="No such slide")
     return Response(image, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
 
 
@@ -98,14 +98,17 @@ async def talk(talk_id: str):
     return found
 
 
-async def call(fn, *args):
+# `missing` is for single-document reads, where an Elasticsearch 404 means no such id. On a search
+# it means the index or alias is gone, a server problem: the page keeps a photo for any 5xx but
+# drops one on a 4xx.
+async def call(fn, *args, missing=None):
     if not search.configured():
         raise HTTPException(503, "Search isn't configured: set ELASTIC_URL and ELASTIC_ES_API_KEY")
     try:
         return await run_in_threadpool(fn, *args)
     except urllib.error.HTTPError as e:
-        if e.code == 404:
-            raise HTTPException(404, "Not found")
+        if missing and e.code == 404:
+            raise HTTPException(404, missing)
         # The status only: the response body can echo the query, which holds the photo.
         log.warning("Elasticsearch returned HTTP %s", e.code)
         raise HTTPException(502, "Search failed")

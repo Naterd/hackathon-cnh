@@ -156,7 +156,7 @@ function draw(source, width, height) {
 }
 
 // When the camera took the photo, from EXIF DateTimeOriginal. Read it before drawing to a canvas,
-// which drops EXIF. Without OffsetTimeOriginal, the time is taken as this phone's time zone.
+// which drops EXIF. Without OffsetTimeOriginal it's Mountain Time, KubeCon's zone (MST in November).
 async function exifTime(file) {
   try {
     const view = new DataView(await file.slice(0, 256 * 1024).arrayBuffer());
@@ -194,13 +194,17 @@ function tiffTime(view, tiff) {
   if (original === null) return null;
   const offset = find(exif, 0x9011);
   const iso = text(original).replace(/^(\d{4}):(\d\d):(\d\d) /, "$1-$2-$3T");
-  const time = Date.parse(offset === null ? iso : iso + text(offset));
+  const time = Date.parse(iso + (offset === null ? "-07:00" : text(offset)));
   return Number.isNaN(time) ? null : time;
 }
+
+// Photo ids with a lookup running, so a retry never races a capture over the same photo.
+const inFlight = new Set();
 
 // Save first, so a failed lookup still leaves the photo on the roll to retry.
 async function handle(blob, takenAt) {
   const photo = { id: `${takenAt}-${Math.random().toString(36).slice(2, 8)}`, takenAt, blob, state: "queued", talks: [], pick: 0 };
+  inFlight.add(photo.id); // before it's saved, where a retry could see it
   await putPhoto(photo);
   $("scan-photo").src = photoURL(photo);
   show("scan");
@@ -217,25 +221,31 @@ async function handle(blob, takenAt) {
 }
 
 async function lookup(photo) {
-  let response;
+  inFlight.add(photo.id);
   try {
-    response = await fetch("/api/lookup", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: photo.blob });
-  } catch {
-    return "Saved to your roll. It'll be matched when you're back online.";
+    let response;
+    try {
+      response = await fetch("/api/lookup", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: photo.blob });
+    } catch {
+      return "Saved to your roll. It'll be matched when you're back online.";
+    }
+    // Only the photo's own fault removes it. Anything else may pass, so it stays queued.
+    if (response.status === 400 || response.status === 413) {
+      await deletePhoto(photo.id);
+      return "Couldn't read that photo. Try another.";
+    }
+    if (!response.ok) return "Saved to your roll. Search isn't answering, so it'll try again later.";
+    const { talks } = await response.json();
+    if (!talks.length) {
+      await deletePhoto(photo.id);
+      return "No talk matched that photo. Try again closer to the slide.";
+    }
+    Object.assign(photo, { state: "matched", talks, pick: 0 });
+    await putPhoto(photo);
+    return "matched";
+  } finally {
+    inFlight.delete(photo.id);
   }
-  if (response.status >= 500) return "Saved to your roll. Search isn't answering, so it'll try again later.";
-  if (!response.ok) {
-    await deletePhoto(photo.id);
-    return "Couldn't read that photo. Try another.";
-  }
-  const { talks } = await response.json();
-  if (!talks.length) {
-    await deletePhoto(photo.id);
-    return "No talk matched that photo. Try again closer to the slide.";
-  }
-  Object.assign(photo, { state: "matched", talks, pick: 0 });
-  await putPhoto(photo);
-  return "matched";
 }
 
 let retrying = false;
@@ -245,7 +255,11 @@ async function retryQueued() {
   $("retry").disabled = true;
   $("retry").textContent = "Matching…";
   try {
-    for (const photo of await allPhotos()) if (photo.state === "queued") await lookup(photo);
+    for (const { id } of await allPhotos()) {
+      // Re-read: since the list was read, a capture may have matched it (and a pick changed) or removed it.
+      const photo = inFlight.has(id) ? null : await getPhoto(id);
+      if (photo?.state === "queued" && !inFlight.has(id)) await lookup(photo);
+    }
   } finally {
     retrying = false;
     $("retry").disabled = false;
