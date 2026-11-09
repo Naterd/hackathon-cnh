@@ -59,8 +59,10 @@ async def main():
         sid = a.cookies[fairshare.COOKIE]
         await a.get("/")
         check("the cookie is kept", a.cookies[fairshare.COOKIE] == sid)
-        r = await a.get("/static/style.css")
-        check("/static doesn't set a cookie", "set-cookie" not in r.headers)
+        async with visitor() as fresh:  # no cookie yet, so only the path filter can keep one off
+            for path in ("/static/style.css", "/api/slide/nope"):
+                r = await fresh.get(path)
+                check(f"{path} doesn't set a cookie", "set-cookie" not in r.headers)
         await b.get("/")
         check("two visitors get two sessions", b.cookies[fairshare.COOKIE] != sid)
 
