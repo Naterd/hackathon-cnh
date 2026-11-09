@@ -61,9 +61,11 @@ Are we using it, what for, and where do you go to see it?
 - **Access from a terminal or agent:** the URL and API key are in Secret `ingest/elastic` (keys `ELASTIC_URL` and `ELASTIC_ES_API_KEY`). **Both count as secrets.** Keep them out of git, chats and output.
 
   ```bash
-  kubectl -n ingest get secret elastic -o jsonpath='{.data.ELASTIC_ES_API_KEY}' | base64 -d | sed 's/^/Authorization: ApiKey /' > ~/.es-auth-header
-  kubectl -n ingest get secret elastic -o jsonpath='{.data.ELASTIC_URL}' | base64 -d > ~/.es-url
-  chmod 600 ~/.es-auth-header ~/.es-url
+  (
+    umask 077
+    kubectl -n ingest get secret elastic -o jsonpath='{.data.ELASTIC_ES_API_KEY}' | base64 -d | sed 's/^/Authorization: ApiKey /' > ~/.es-auth-header
+    kubectl -n ingest get secret elastic -o jsonpath='{.data.ELASTIC_URL}' | base64 -d > ~/.es-url
+  )
   curl -s -H @"$HOME/.es-auth-header" "$(cat ~/.es-url)/kubecon-moments/_count"
   ```
 - **Rules that bite:** exclude `slide` and `said` from `_source` in every search. Images must be at most 1 MB decoded. Filters go inside the `knn` clause. Bulk returns 200 even when items fail. See `AGENTS.md`.
@@ -122,8 +124,10 @@ telemetry.flush()                           # also runs at exit
 
 ```bash
 gcloud container clusters get-credentials cnh --zone us-west3-a --project five9-cyclops-playground --dns-endpoint
-kubectl -n dash0-system get secret dash0-authorization-secret -o jsonpath='{.data.token}' | base64 -d | sed 's/^/Authorization: Bearer /' > ~/.dash0-auth-header
-chmod 600 ~/.dash0-auth-header
+(
+  umask 077
+  kubectl -n dash0-system get secret dash0-authorization-secret -o jsonpath='{.data.token}' | base64 -d | sed 's/^/Authorization: Bearer /' > ~/.dash0-auth-header
+)
 curl -s -H @"$HOME/.dash0-auth-header" "https://api.us-west-2.aws.dash0.com/api/dashboards?dataset=default"
 ```
 
