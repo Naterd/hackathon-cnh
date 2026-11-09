@@ -43,6 +43,7 @@ Are we using it, what for, and where do you go to see it?
 - **How it's wired:** the Dash0 operator in namespace `dash0-system` injects OpenTelemetry into pods in `slidekick` and `ingest`. The app and the ingest Jobs export traces, metrics and logs with no SDK setup in our code. `ingest/telemetry.py` adds per-talk and per-phase spans, plus the stills and documents counters.
 - **Where to look:** [app.dash0.com](https://app.dash0.com) > Dashboards > *SlideKick: Four Golden Signals*, which has sections for the app, ingest Jobs, and ingest pipeline. Region `us-west-2`, dataset `default`.
 - **Access:** the API token is in Secret `dash0-system/dash0-authorization-secret`. The steps for reading it safely are under [Observability (Dash0)](#observability-dash0).
+- **Ingest runs:** the first run (the POC, about 11:20 MT) predates the ingest telemetry, so the dashboard's "ingest: pipeline" panels are empty for it. That's expected. The V2 run is the measured one.
 - **Not yet:** a synthetic check on `/healthz`, an SLO, browser monitoring, and an Agent0 investigation.
 
 ### Radar: Kubernetes UI and AI SRE
@@ -50,7 +51,18 @@ Are we using it, what for, and where do you go to see it?
 - **How it's wired:** the Radar agent (1.20.2) runs in namespace `radar` on cluster `cnh` and reports to our own Radar Cloud organization. Its connection config is in Secret `radar/radar-cloud-config`. Don't touch it, and don't upgrade Radar.
 - **Where to look:** [app.radarhq.io](https://app.radarhq.io), then switch to our organization and open the cluster for Resources, Timeline, Issues and Checks. Take the Checks before and after screenshots there.
 - **From Claude Code:** run `claude mcp add --scope user radar-cloud --transport http https://api.radarhq.io/mcp`, then `/mcp` > radar-cloud > Authenticate, and pick **our** organization. The `ship`, `debug-failure` and `demo-story` skills in `.agents/skills/` use it.
-- **For the judges:** at least one AI investigation on a real issue, and the day's story from Radar's timeline.
+- **For the judges:** at least one AI investigation on a real issue, and the day's story from Radar's timeline. The full record is in [`STORY.md`](STORY.md).
+
+#### How Radar helped us solve a problem
+
+1. **Radar flagged it.** At 12:32 MT, Radar's **Issues** showed our test ingest run, Job `ingest/ingest-extract-ci` (4 talks), as **Unschedulable**: "Insufficient cpu". Nothing had failed loudly. The Job looked like it was simply running.
+2. **We asked Radar's AI SRE.** We started an AI investigation on the Job ([shared investigation](https://app.radarhq.io/c/k8l3A-86hTM/investigations/chat_nnIgqoMG-hY1WF54?org=org_LAtK4qe79DlO)). Its first answer was "healthy, no warning events". It had read the Job's events only.
+3. **We steered it with evidence.** Radar's own pod events (`get_events`) showed what the Job view hid. We sent a follow-up asking it to check the pods. It **revised its finding** to a root cause with confidence 0.85: "A new spot node's boot, storage-driver registration, and image pulls delayed pod index 3 by about 95 seconds."
+   - 48 s unschedulable: the one spot node fits only three 2-CPU pods, so the autoscaler added a node (1 → 2).
+   - Then a `FailedMount` because the new node's GCS FUSE CSI driver wasn't registered yet.
+   - Then three cold image pulls, including the 368 MB ingest image.
+4. **What we decided.** The full V2 run (about 370 talks) would pay that ~95 s for **every** new spot node. So before V2 we **pre-scale the ingest spot pool**, so the nodes are up and CSI-ready before the Job fans out. We checked Radar's second suggestion, GKE Image Streaming, and found it doesn't apply to us: it's off on the pool, and it only works for images in Artifact Registry, while ours come from GHCR.
+5. **Checks, before and after.** Radar Checks reported 10 medium findings in our namespaces (see [`STORY.md`](STORY.md)). We fixed the ones that apply in a reviewed PR: a PodDisruptionBudget, no auto-mounted service-account token, and a soft topology spread for the app. `podHARisk` remains while the default pool has one node; the soft spread kicks in when a second node appears.
 
 ### Elasticsearch: document store and search
 
@@ -68,6 +80,7 @@ Are we using it, what for, and where do you go to see it?
   )
   curl -s -H @"$HOME/.es-auth-header" "$(cat ~/.es-url)/kubecon-moments/_count"
   ```
+- **How the app queries it:** [`docs/search.md`](docs/search.md), with a runnable example in `docs/search_example.py`.
 - **Rules that bite:** exclude `slide` and `said` from `_source` in every search. Images must be at most 1 MB decoded. Filters go inside the `knn` clause. Bulk returns 200 even when items fail. See `AGENTS.md`.
 
 ## How it works
