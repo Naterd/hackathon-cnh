@@ -103,7 +103,8 @@ Judged on: features landing through PRs Gitar reviewed; review instructions **an
 - [x] Repository rules in [`.gitar/rules/`](.gitar/rules/): `deploy-changes` and `index-mapping` ([#15](https://github.com/Naterd/hackathon-cnh/pull/15))
 - [x] PR CI for the app: `app-ci` (smoke test plus image build) on GitHub-hosted runners ([#15](https://github.com/Naterd/hackathon-cnh/pull/15))
 - [x] Auto-apply turned on: `gitar auto-apply:on` on [#16](https://github.com/Naterd/hackathon-cnh/pull/16), and Gitar's review reports "Auto-apply is on". Keep doing it on each feature PR.
-- [ ] **One real CI failure that Gitar diagnosed and fixed**, with the PR linked here. Owner: team. Don't break CI on purpose; it'll happen.
+- [x] **Gitar fixed a real problem with auto-apply** on [#16](https://github.com/Naterd/hackathon-cnh/pull/16): its review found that huge-pixel uploads could OOM the pod, it pushed the fix itself ([`a8db50f`](https://github.com/Naterd/hackathon-cnh/commit/a8db50f), "reject unsafe uploaded images"), and we refined it afterwards (`search.BadPhoto`)
+- [ ] *(bonus)* Gitar diagnoses a real **CI failure**. No PR's CI has failed yet, so this hasn't come up. Don't break CI on purpose. Owner: team.
 
 ### Dash0: Stop Flying Blind
 
