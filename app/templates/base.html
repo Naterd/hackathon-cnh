@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SlideKick{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css?v={{ version }}">
+  <script src="/static/app.js?v={{ version }}" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/">SlideKick</a></header>
+  <main>{% block content %}{% endblock %}</main>
+  <footer>
+    <p>Talks from CNCF's KubeCon + CloudNativeCon North America 2024 recordings (CC BY), linked on YouTube.</p>
+    <p>version {{ version }}</p>
+  </footer>
+</body>
+</html>

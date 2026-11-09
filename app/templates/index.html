@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Photograph a KubeCon slide.</h1>
+<p>Get the talk, the speaker and a YouTube link that starts the moment that slide appeared.</p>
+
+<input id="photo" class="visually-hidden" type="file" accept="image/*" capture="environment">
+<label class="button" for="photo">Take a photo</label>
+
+<p id="status" aria-live="polite"></p>
+<img id="preview" alt="The slide you photographed" hidden>
+{% endblock %}
