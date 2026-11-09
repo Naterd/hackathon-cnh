@@ -1,0 +1,55 @@
+# The CI runners' service account may start and read Jobs in namespace ingest-ci only. Kubernetes
+# lets a pod use any Secret and service account in its own namespace, so whatever ingest-ci holds is
+# what CI code can reach, and its logs end up in the public Actions log:
+#   - Secret elastic: an Elasticsearch key that can read the live index and write only kubecon-moments-ci
+#     (created by ci/arc/install.sh, never in git)
+#   - service account downloader: through Workload Identity, read on the bucket, write only under
+#     derived/ci/ and eval/ (IAM in ci/arc/install.sh)
+# The real key and bucket access stay in namespace ingest, which the runners can't touch.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ingest-ci
+  labels: {purpose: cnh-hackathon}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: downloader
+  namespace: ingest-ci
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-runner
+  namespace: arc-runners
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-runner
+  namespace: ingest-ci
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-runner
+  namespace: ingest-ci
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ci-runner
+subjects:
+  - kind: ServiceAccount
+    name: ci-runner
+    namespace: arc-runners

@@ -4,7 +4,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: ingest-index
-  namespace: ingest
+  namespace: __NS__
   labels: {app: ingest, step: index, purpose: cnh-hackathon, app.kubernetes.io/name: slidekick-ingest, app.kubernetes.io/version: "__VERSION__"}
 spec:
   backoffLimit: 1

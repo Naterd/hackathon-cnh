@@ -10,6 +10,16 @@ Turns the KubeCon recordings in GCS into searchable slide moments in Elasticsear
 
 Re-running is cheap. Extract skips finished talks unless `--force`, and index overwrites documents by their stable ids. For a changed mapping or extractor, write into a new `DERIVED` version or index name, then point the `kubecon-moments` alias at it with `--alias`.
 
+## Measuring accuracy
+
+`eval.py` picks random moments from random talks and renders each one as a phone photo, with random perspective, tilt, glare, blur, noise and JPEG quality. It runs the app's lookup (the query in `docs/search.md`) on each photo and reports:
+- **talk@1 and talk@3:** whether the right talk comes first, or within the first three.
+- **moment:** whether the top hit is the slide on screen at that moment, so the YouTube link lands right.
+- **moment±30s:** the same, within 30 seconds either side, which counts an adjacent slide.
+- **latency.**
+
+Each score is broken down by photo mode and talk layout. The modes are `screen` (the whole video frame, as when photographing a laptop playing the talk, which is the demo) and `slide` (only the slide, as at the venue). Missed photos are saved to `gs://<bucket>/eval/<run>/`. The test runs as one pod on the spot pool: `ingest/run.sh eval --n 200`. Point `--index` at `kubecon-moments-v2` to compare index versions before moving the alias. `--min-talk1` makes it fail below a threshold, for CI.
+
 ## Running it
 
 ```bash
