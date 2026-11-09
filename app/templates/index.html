@@ -3,7 +3,7 @@
 {% block content %}
 <main>
   <section id="capture" class="view dark" aria-labelledby="capture-title">
-    <h1 id="capture-title" class="visually-hidden">Capture a slide</h1>
+    <h1 id="capture-title" class="visually-hidden" tabindex="-1">Capture a slide</h1>
     <video id="viewfinder" playsinline muted aria-hidden="true"></video>
     <div class="capture-top">
       <span class="tag dark" id="live" hidden><span class="dot"></span>Camera on</span>
@@ -31,9 +31,9 @@
     <div class="flash" id="flash"></div>
   </section>
 
-  <section id="scan" class="view scan" aria-labelledby="scan-title" hidden>
+  <section id="scan" class="view scan" aria-labelledby="scan-title" aria-busy="true" hidden>
     <div class="scan-box bracketed"><img id="scan-photo" alt=""><span class="scan-line"></span></div>
-    <h2 id="scan-title">Finding the talk</h2>
+    <h1 id="scan-title" tabindex="-1">Finding the talk</h1>
     <p>Reading the slide and matching it against 12,146 slides from 370 talks</p>
   </section>
 
@@ -49,15 +49,16 @@
     </figure>
     <p class="kicker" id="match-meta"></p>
     <p class="timing" id="match-timing" hidden></p>
-    <h2 class="match-title" id="match-title"></h2>
+    <h1 class="match-title" id="match-title" tabindex="-1"></h1>
     <div class="presenter" id="presenter">
       <span class="initials" id="initials" aria-hidden="true"></span>
       <p id="speakers"></p>
     </div>
     <a class="recording" id="recording">
       <span class="video-thumb" aria-hidden="true"><svg><use href="#i-play"/></svg></span>
-      <span><strong id="recording-title"></strong><span id="recording-sub"></span></span>
+      <span><strong id="recording-title"></strong><span id="recording-sub"></span><span class="visually-hidden"> (opens YouTube in a new tab)</span></span>
     </a>
+    <blockquote class="said" id="said" hidden><p class="kicker" id="said-head"></p><p id="said-text"></p></blockquote>
     <p class="sub" id="match-note" hidden>Matched without the image search, because Elastic was busy. If this isn't the talk, try the other matches below.</p>
     <div class="section-head" id="strip-head" hidden><h3>The talk's slides</h3><span id="strip-count"></span></div>
     <ol class="strip" id="strip"></ol>
@@ -69,7 +70,7 @@
 
   <section id="roll" class="view paper" aria-labelledby="roll-title" hidden>
     <div class="roll-head">
-      <h1 id="roll-title">Photo roll</h1>
+      <h1 id="roll-title" tabindex="-1">Photo roll</h1>
       <button class="ghost" id="select" type="button" hidden>Select</button>
     </div>
     <p class="sub" id="roll-sub"></p>
@@ -90,7 +91,7 @@
   </section>
 
   <section id="timeline" class="view paper" aria-labelledby="timeline-title" hidden>
-    <h1 id="timeline-title">Your KubeCon</h1>
+    <h1 id="timeline-title" tabindex="-1">Your KubeCon</h1>
     <p class="sub" id="timeline-sub"></p>
     <div id="timeline-days"></div>
   </section>
