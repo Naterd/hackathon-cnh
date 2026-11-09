@@ -13,12 +13,12 @@ The team name is in `deploy/kustomization.yaml` (`namespace: team-<team>`). Rada
 
 ## 0. First time only
 
-Skip this if `get_resource` (kind `Application`, group `argoproj.io`, name `app`) finds the Application.
+Skip this if `get_resource` (kind `Application`, group `argoproj.io`, namespace `argocd`, name `slidekick`) finds the Application. On our cluster it already exists.
 
 1. If `deploy/kustomization.yaml` still says `team-__TEAM__`, run `./scripts/setup.sh <team>` first. Ask for the team name if you don't know it.
 2. Push (step 1 below) and wait for the first build (step 2).
 3. The GHCR image must be public, and usually already is. Don't check it up front: new pods that pull it and run (step 4) prove it.
-4. Apply `argocd/application.yaml` with `apply_resource` (with `cluster`). The starter app is already running; Argo CD takes it over. Keep the app’s reconciled manifests in GitOps. Direct Secrets and temporary Jobs follow the [agent workflows](../../../examples/agent-workflows/README.md) recipe.
+4. Apply `argocd/project.yaml`, then `argocd/application-byo.yaml`, with `apply_resource` (with `cluster`). Never apply a second Application for `deploy/`. Keep the app’s reconciled manifests in GitOps. Direct Secrets and temporary Jobs follow the [agent workflows](../../../examples/agent-workflows/README.md) recipe.
 
 ## 1. Push
 
@@ -36,7 +36,7 @@ If the run failed, read `gh run view <id> --log-failed`, fix it, push again, and
 
 ## 3. Sync
 
-Argo CD polls git every few minutes. Don't wait for it: call `manage_gitops` with `cluster`, `tool: argocd`, `action: sync`, `namespace: team-<team>`, `name: app`.
+Argo CD polls git every few minutes. Don't wait for it: call `manage_gitops` with `cluster`, `tool: argocd`, `action: sync`, `namespace: argocd`, `name: slidekick`.
 
 The starter's Application has no `syncOptions` and needs none. If an Application has options (such as `ServerSideApply=true` for large CRDs or `CreateNamespace=true`), read the live Application immediately before syncing and pass its complete current list as `sync_options`. Do not use a cached list or pass only one added option. This preserves the options on Radar v1.19.0, which does not inherit them; Radar’s current sync implementation inherits them when omitted, but an explicit list replaces them for that sync.
 

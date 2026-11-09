@@ -20,7 +20,7 @@ The team is `<team>` from `namespace: team-<team>` in `deploy/kustomization.yaml
    - Checks before and after.
 5. **Screenshots to take,** each with its link (`https://app.radarhq.io/c/<cluster-id>/…`):
    - `timeline`: the day's changes;
-   - the Application `app`: `resources/applications?resource=team-<team>/app&apiGroup=argoproj.io`;
+   - the Application `slidekick`: `resources/applications?resource=argocd/slidekick&apiGroup=argoproj.io`;
    - Checks: the whole list (`https://app.radarhq.io/checks?scope=<cluster-id>`, the platform's findings show what Radar catches), and the team's (`https://app.radarhq.io/checks?scope=<cluster-id>&namespace=team-<team>`) next to the morning's;
    - the investigation (step 3).
 

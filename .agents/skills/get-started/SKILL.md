@@ -26,10 +26,10 @@ Check first, then set up. Keep replies short. At a check that fails, say in a se
 
 ## Set up (ask once, then run it through)
 
-Say what's left of the list below and ask once: "Shall I set it up? I'll push to your repo and deploy through Radar." Skip what's already done (the Application `app` in `team-<team>`, `get_resource` group `argoproj.io`; `STORY.md`). When they say go, run to the end without stopping:
+Say what's left of the list below and ask once: "Shall I set it up? I'll push to your repo and deploy through Radar." Skip what's already done (the Application `slidekick` in `argocd`, `get_resource` group `argoproj.io`; `STORY.md`). When they say go, run to the end without stopping:
 
 1. If setup.sh hasn't run: `./scripts/setup.sh <team>`, then commit "Set up team <team>", `git pull --rebase`, push.
-2. Follow the `ship` skill from step 0: it waits for the build and its `deploy:` commit, applies `argocd/application.yaml`, syncs, waits for the new pods (which proves the image is public), and checks that the URL shows the pushed commit.
+2. Follow the `ship` skill from step 0: it waits for the build and its `deploy:` commit, applies `argocd/project.yaml` and `argocd/application-byo.yaml` if Application `slidekick` is missing, syncs, waits for the new pods (which proves the image is public), and checks that the URL shows the pushed commit.
 3. Record the "before": `get_cluster_audit` with `namespace: team-<team>`. Write `STORY.md` with a heading `## Before` (local date and time; the link `https://app.radarhq.io/checks?scope=<cluster-id>&namespace=team-<team>`; findings by severity; one line per finding: check and resource), commit and push it. Markdown alone doesn't trigger a build.
 
 Report the URL and the version it shows.
