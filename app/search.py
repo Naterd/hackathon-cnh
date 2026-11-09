@@ -14,7 +14,7 @@ from rapidocr_onnxruntime import RapidOCR
 INDEX = "kubecon-moments"  # alias; points at the current index version
 EVENT = "kubecon-na-2024"
 MAX_BYTES = 900_000  # the semantic field takes at most 1 MB of decoded image bytes
-MAX_PIXELS = 50_000_000
+MAX_PIXELS = 25_000_000  # the page sends at most 1280 px a side, about 1.6M pixels
 FIELDS = ["talk_id", "title", "speakers_text", "start_sec", "url"]
 
 log = logging.getLogger("slidekick.search")
@@ -43,13 +43,21 @@ def es(method, path, body):
         return json.loads(r.read())
 
 
+class BadPhoto(ValueError):
+    """The upload isn't an image Pillow can read, or has too many pixels to decode safely."""
+
+
 def prepare(photo):
     """Upright JPEG under the field's limit, as the semantic field's image object."""
-    im = Image.open(io.BytesIO(photo))
-    if im.width * im.height > MAX_PIXELS:
-        raise ValueError("image too large")
-    im.draft("RGB", (2560, 2560))
-    im = ImageOps.exif_transpose(im).convert("RGB")
+    try:
+        im = Image.open(io.BytesIO(photo))  # reads the header only
+        im.draft("RGB", (1280, 1280))  # JPEGs then decode at 1/2, 1/4 or 1/8 scale
+        # A 10 MB PNG can hold 100M+ pixels, and decoding takes several bytes per pixel.
+        if im.width * im.height > MAX_PIXELS:
+            raise BadPhoto(f"{im.width}x{im.height} is too many pixels")
+        im = ImageOps.exif_transpose(im).convert("RGB")
+    except (OSError, Image.DecompressionBombError) as e:  # covers UnidentifiedImageError
+        raise BadPhoto(str(e)) from e
     im.thumbnail((1280, 1280))
     for quality in (85, 70, 55):
         buf = io.BytesIO()
