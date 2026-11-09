@@ -83,6 +83,68 @@ Are we using it, what for, and where do you go to see it?
 - **How the app queries it:** [`docs/search.md`](docs/search.md), with a runnable example in `docs/search_example.py`.
 - **Rules that bite:** exclude `slide` and `said` from `_source` in every search. Images must be at most 1 MB decoded. Filters go inside the `knn` clause. Bulk returns 200 even when items fail. See `AGENTS.md`.
 
+## Demo-ready checklist
+
+What's left before each sponsor tool counts as **integrated and ready to demo**. Every item maps to the track's judging criteria from the [hackathon page](https://www.wemakedevs.org/hackathons/cnh), or is marked *(bonus)*.
+
+- **Tick a box only with evidence:** a PR, link or file. Tick it in the same PR that closes it.
+- **A tool is ready** when every non-bonus box is ticked.
+- **Owners:** "team" means nobody has picked it up yet. Claim it by putting your name there.
+
+### Gitar: Never Merge Broken
+
+Judged on: features landing through PRs Gitar reviewed; review instructions **and repository rules**; CI failure diagnosis **and auto-apply** on real problems.
+
+- [x] The Gitar app reviews every PR ([#1](https://github.com/Naterd/hackathon-cnh/pull/1) to [#13](https://github.com/Naterd/hackathon-cnh/pull/13))
+- [x] Review instructions in [`.gitar/review/main.md`](.gitar/review/main.md)
+- [x] Real findings acted on: [#4](https://github.com/Naterd/hackathon-cnh/pull/4) → [#5](https://github.com/Naterd/hackathon-cnh/pull/5) (duplicate Argo CD Application), [#9](https://github.com/Naterd/hackathon-cnh/pull/9) (key-file permissions), [#13](https://github.com/Naterd/hackathon-cnh/pull/13) (story timestamps)
+- [x] PR CI for ingest: `ingest-ci` on our GKE runners ([#11](https://github.com/Naterd/hackathon-cnh/pull/11))
+- [ ] Repository rules in `.gitar/rules/` (`deploy-changes`, `index-mapping`). Owner: Joel. Branch `gitar-rules-app-ci`.
+- [ ] PR CI for the app: `app-ci` (smoke test plus image build). Owner: Joel. Same branch.
+- [ ] Auto-apply turned on for each feature PR: comment `gitar auto-apply:on` on it. Owner: whoever opens the PR.
+- [ ] **One real CI failure that Gitar diagnosed and fixed**, with the PR linked here. Owner: team. Don't break CI on purpose; it'll happen.
+
+### Dash0: Stop Flying Blind
+
+Judged on: depth of instrumentation (traces, logs, metrics, real-user monitoring); Agent0 or the MCP used to find and fix something real; observability that's part of the product. *(Bonus: a dashboard or SLO.)*
+
+- [x] Operator on GKE; `slidekick` and `ingest` monitored; app traces flowing (see [Observability (Dash0)](#observability-dash0))
+- [x] Metrics: Kubernetes CPU, memory and Jobs, plus request rate, errors and latency from spans
+- [ ] Logs: confirm pod logs from `slidekick` and `ingest` show up in Dash0. Owner: Joel.
+- [ ] Ingest telemetry: the V2 run fills the dashboard's "ingest: pipeline" section. Owner: whoever runs V2.
+- [ ] Real-user monitoring: Dash0's web SDK in `app/templates/base.html`, with `https://ingress.us-west-2.aws.dash0.com` in the CSP `connect-src`. Owner: team.
+- [ ] The match confidence recorded on the lookup span, once `/api/lookup` is real. Owner: whoever wires the lookup.
+- [ ] Observability in the product, for example the lookup's latency or trace ID on the results page. Owner: team.
+- [ ] **Agent0 or the Dash0 MCP finds and fixes something real**, linked here. Owner: Joel.
+- [x] *(bonus)* Dashboard *SlideKick: Four Golden Signals*: app, ingest Jobs, ingest pipeline
+- [ ] *(bonus)* SLO on `/api/lookup` p95 latency, or on availability. Owner: Joel.
+- [ ] *(bonus)* Synthetic check on `https://slidekick.us/healthz`. Owner: Joel.
+
+### Radar: AI SRE
+
+Judged on: running on Kubernetes with Radar connected; Radar's UI and MCP used throughout building and operating; an AI investigation of a real issue.
+
+- [x] Cluster `cnh` connected to our Radar organization `hackathon`
+- [x] Radar's MCP in use: Checks, Issues, events, investigations
+- [x] AI investigation of a real issue, shared and corrected by a follow-up ([story](#sponsor-tools), [`STORY.md`](STORY.md))
+- [x] Checks "before" recorded in [`STORY.md`](STORY.md)
+- [ ] Checks "after": merge [#13](https://github.com/Naterd/hackathon-cnh/pull/13), run Checks again for `slidekick`, and fill in `STORY.md`. Owner: Joel.
+- [ ] Ship one deploy **through Radar's MCP**, using the `ship` skill (sync, wait for the rollout, check the version). Owner: Joel.
+- [ ] Act on the investigation's decision: pre-scale the ingest spot pool before V2. Owner: whoever runs V2.
+- [ ] *(bonus)* Fix the high Checks finding on the ARC controller (`arc-systems`). Owner: Nate.
+- [ ] Draft the 5:30 story from Radar's timeline with the `demo-story` skill, at about 5:00. Owner: Joel.
+
+### Elasticsearch: Find the Right Talk
+
+Judged on: Elasticsearch as the core data layer; smart search (keyword, semantic, vector or hybrid).
+
+- [x] Serverless project `slidekick`; alias `kubecon-moments` → `kubecon-moments-v1`, 39,602 documents; semantic `slide`, `said` and `abstract` fields with Jina
+- [x] Hybrid RRF lookup documented and runnable: [`docs/search.md`](docs/search.md), `docs/search_example.py`
+- [x] Accuracy measured with `ingest/eval.py`; results in [`docs/results.md`](docs/results.md)
+- [ ] **`/api/lookup` runs the real hybrid query** (it's a stub today). This is the "core data layer" criterion. Owner: team.
+- [ ] The results page shows real talks and timestamps from Elasticsearch. Owner: team.
+- [ ] *(bonus)* This week's schedule and decks indexed for live mode. Owner: team.
+
 ## How it works
 
 1. **Ingest (GKE spot Jobs).** Crop each recording to its slide area, detect slide changes, drop near-duplicates, OCR each still, and attach the captions spoken while it was on screen. One indexer loads the results into Elasticsearch.
