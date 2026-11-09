@@ -33,6 +33,7 @@ let tab = "capture";
 let navigated = false;
 
 function show(name) {
+  const from = ["capture", "scan", "match", "roll", "timeline"].find((v) => !$(v).hidden);
   for (const view of ["capture", "scan", "match", "roll", "timeline"]) $(view).hidden = view !== name;
   document.querySelector('meta[name="theme-color"]').content =
     { capture: "#151618", scan: "#07191d" }[name] ?? "#f2f8f9";
@@ -44,7 +45,7 @@ function show(name) {
   if (name === "capture") startCamera();
   else stopCamera();
   // Screen readers stay on the control that started the change, which is now hidden. Take them to the new view.
-  if (navigated || name === "scan") $(`${name}-title`)?.focus({ preventScroll: true });
+  if (navigated || name === "scan" || from === "scan") $(`${name}-title`)?.focus({ preventScroll: true });
 }
 
 async function route() {
