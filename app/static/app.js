@@ -153,20 +153,45 @@ function drawFramed() {
 }
 
 $("photo").onchange = async (event) => {
-  const file = event.target.files[0];
+  const files = [...event.target.files];
   event.target.value = "";
-  if (!file) return;
+  if (files.length > 1) return addMany(files);
+  if (!files.length) return;
+  const read = await readPhoto(files[0]);
+  if (!read) return toast("That file isn't a photo SlideKick can read.");
+  handle(read.blob, read.takenAt);
+};
+
+// Several photos: save them all to the roll, then match them there one at a time. The server runs one
+// lookup at a time per visitor anyway, and the roll shows each one as it matches.
+async function addMany(files) {
+  location.hash = "#roll";
+  say(`Adding ${plural(files.length, "photo")}…`);
+  let unreadable = 0;
+  for (const file of files) {
+    const read = await readPhoto(file);
+    if (!read) unreadable++;
+    else {
+      await putPhoto(newPhoto(read.blob, read.takenAt));
+      if (!$("roll").hidden) renderRoll();
+    }
+  }
+  if (unreadable) toast(`${plural(unreadable, "file")} ${unreadable === 1 ? "isn't a photo" : "aren't photos"} SlideKick can read.`);
+  matchQueued(true);
+}
+
+async function readPhoto(file) {
   const takenAt = (await exifTime(file)) ?? file.lastModified ?? Date.now();
   let bitmap;
   try {
     bitmap = await createImageBitmap(file);
   } catch {
-    return toast("That file isn't a photo SlideKick can read.");
+    return null;
   }
   const blob = await draw(bitmap, bitmap.width, bitmap.height);
   bitmap.close();
-  handle(blob, takenAt);
-};
+  return { blob, takenAt };
+}
 
 // At most 2560 px on the long side, about 1 MB. The server cuts the slide out of the photo, and from
 // the back of a room the slide is a fraction of it: at 1280 px a projected slide is about 400 px wide.
@@ -229,8 +254,11 @@ const deleted = new Set();
 let framedURL = null; // the Scanning screen's crop of the last capture
 
 // Save first, so a failed lookup still leaves the photo on the roll to retry.
+const newPhoto = (blob, takenAt) =>
+  ({ id: `${takenAt}-${Math.random().toString(36).slice(2, 8)}`, takenAt, blob, state: "queued", talks: [], pick: 0 });
+
 async function handle(blob, takenAt, framed = null) {
-  const photo = { id: `${takenAt}-${Math.random().toString(36).slice(2, 8)}`, takenAt, blob, state: "queued", talks: [], pick: 0 };
+  const photo = newPhoto(blob, takenAt);
   inFlight.add(photo.id); // before it's saved, where a retry could see it
   await putPhoto(photo);
   if (framedURL) URL.revokeObjectURL(framedURL);
@@ -263,7 +291,10 @@ async function lookup(photo) {
       await deletePhoto(photo.id);
       return "Couldn't read that photo. Try another.";
     }
-    if (response.status === 429) return "Saved to your roll. That's a lot of photos at once: tap Retry on the roll in a minute.";
+    if (response.status === 429) {
+      waitSec = Number(response.headers.get("Retry-After")) || 60;
+      return "Saved to your roll. That's a lot of photos at once: tap Retry on the roll in a minute.";
+    }
     if (!response.ok) return "Saved to your roll. Search isn't answering, so it'll try again later.";
     const { talks, degraded, meta } = await response.json();
     if (!talks.length) {
@@ -279,28 +310,71 @@ async function lookup(photo) {
   }
 }
 
+// Match the queued photos one at a time, oldest first, redrawing the roll after each. It stops at the
+// first failure that isn't the photo's own (offline, search down, over the per-minute limit): the rest
+// would fail the same way. Over the limit, it carries on by itself once the server says it may.
+// `told`: the person started this pass (Retry, or a batch), so it reports how it went. Page load and
+// coming back online stay quiet, apart from the over-the-limit wait.
 let retrying = false;
-async function retryQueued() {
-  if (retrying) return;
+let again = null; // a call that came in mid-pass, for photos the pass didn't list: {told}
+let waitSec = 0; // set by a 429's Retry-After
+let resume = null;
+async function matchQueued(told = false) {
+  if (retrying) {
+    again = { told: told || !!again?.told };
+    return;
+  }
   retrying = true;
-  $("retry").disabled = true;
-  $("retry").textContent = "Matching…";
+  again = null;
+  clearTimeout(resume);
+  waitSec = 0;
+  const retry = $("retry");
+  retry.disabled = true;
+  let failure = null;
+  let matched = 0;
+  let removed = 0;
   try {
-    for (const { id } of await allPhotos()) {
+    const ids = (await allPhotos()).filter((p) => p.state === "queued").map((p) => p.id);
+    for (const [n, id] of ids.entries()) {
+      retry.textContent = ids.length > 1 ? `Matching ${n + 1} of ${ids.length}…` : "Matching…";
       // Re-read: since the list was read, a capture may have matched it (and a pick changed) or removed it.
       const photo = inFlight.has(id) ? null : await getPhoto(id);
-      if (photo?.state === "queued" && !inFlight.has(id)) await lookup(photo);
+      if (photo?.state !== "queued" || inFlight.has(id)) continue;
+      const outcome = await lookup(photo);
+      if (!$("roll").hidden) await renderRoll();
+      if (outcome === "matched") matched++;
+      else if (!(await getPhoto(id))) removed++; // unreadable, or no talk matched: lookup removed it
+      else {
+        failure = outcome; // still queued: not this photo's fault
+        break;
+      }
     }
   } finally {
     retrying = false;
-    $("retry").disabled = false;
-    $("retry").textContent = "Retry";
+    retry.disabled = false;
+    retry.textContent = "Retry";
   }
   if (!$("roll").hidden) renderRoll();
   if (!$("capture").hidden) renderRollThumb();
+  told ||= !!again?.told;
+  if (waitSec) {
+    again = null; // the resumed pass lists everything still queued
+    resume = setTimeout(() => matchQueued(told), waitSec * 1000);
+    retry.textContent = "Retry now";
+    toast(`That's a lot of photos at once. Matching the rest in ${waitSec} s.`);
+  } else if (failure) {
+    again = null;
+    if (told) toast(failure);
+  } else if (again) {
+    return matchQueued(told); // photos added mid-pass. The next pass reports on its own photos.
+  } else if (told && removed) {
+    toast(`Matched ${plural(matched, "photo")}. ${plural(removed, "photo")} didn't match a talk and ${removed === 1 ? "was" : "were"} removed.`);
+  } else if (told && matched > 1) {
+    say(`Matched ${plural(matched, "photo")}.`);
+  }
 }
-addEventListener("online", retryQueued);
-$("retry").onclick = retryQueued;
+addEventListener("online", () => matchQueued());
+$("retry").onclick = () => matchQueued(true);
 
 // Match
 let current = null;
@@ -602,4 +676,4 @@ function toast(text) {
 }
 
 route();
-retryQueued();
+matchQueued();
