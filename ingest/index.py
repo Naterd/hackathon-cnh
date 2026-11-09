@@ -86,9 +86,15 @@ class ES:
             "Content-Type": "application/x-ndjson" if ndjson else "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=600) as r:
-                return r.status, json.loads(r.read() or b"{}")
+                code, raw = r.status, r.read()
         except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read() or b"{}")
+            code, raw = e.code, e.read()
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            return 503, {"error": str(e)}  # transport failure: retryable, like a gateway 503
+        try:
+            return code, json.loads(raw or b"{}")
+        except ValueError:  # gateways answer 502/503/504 with HTML or plain text
+            return code, {"error": raw[:300].decode(errors="replace")}
 
 
 def ensure_index(es, index, alias):
@@ -110,8 +116,9 @@ def image_object(path):
     return {"type": "image", "format": "base64", "value": f"data:image/jpeg;base64,{data}"}
 
 
-def talk_docs(talk_dir, event):
-    """(id, doc) pairs for one extracted talk: one talk document, then one per still."""
+def talk_docs(talk_dir, event, skipped):
+    """(id, doc) pairs for one extracted talk: one talk document, then one per still.
+    Stills too big to index are appended to `skipped`, which counts as failures."""
     talk = json.loads((talk_dir / "talk.json").read_text())
     vid = talk["video_id"]
     base = {"event": event, "talk_id": vid, "video_id": vid, "title": talk["title"],
@@ -126,6 +133,7 @@ def talk_docs(talk_dir, event):
         if still.stat().st_size > MAX_IMAGE_BYTES:  # extract.py re-encodes; never send one over the limit
             log(f"skipping {vid}/{s['still']}: {still.stat().st_size} bytes is over the 1 MB image limit")
             telemetry.docs(indexed=0, rejected=1)
+            skipped.append(f"{vid}/{s['still']}")
             continue
         doc = {**base, "source": "frame", "n": s["n"], "start_sec": s["start"], "end_sec": s["end"],
                "url": f"https://youtu.be/{vid}?t={int(s['start'])}", "still": f"{vid}/{s['still']}",
@@ -200,10 +208,12 @@ def main():
                             {"query": {"terms": {"talk_id": [t.name for t in talks]}}})
         log(f"replace: deleted {r.get('deleted')} existing docs ({status})")
 
+    skipped = []
+
     def batches():
         batch = []
         for t in talks:
-            for pair in talk_docs(t, a.event):
+            for pair in talk_docs(t, a.event, skipped):
                 batch.append(pair)
                 if len(batch) == a.batch:
                     yield batch
@@ -222,6 +232,7 @@ def main():
                     o, x = f.result(); ok += o; failed += x
         for f in cf.as_completed(pending):
             o, x = f.result(); ok += o; failed += x
+    failed += len(skipped)  # a missing slide is a failure: exit 1 and leave the alias alone
     dt = time.time() - t0
     log(f"indexed {ok} docs, {failed} failed, in {dt:.0f}s ({ok / max(dt, 1):.1f} docs/s)")
     if a.alias and not failed:
