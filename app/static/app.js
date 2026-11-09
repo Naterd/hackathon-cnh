@@ -94,6 +94,7 @@ async function openCamera(ask) {
   $("aim").hidden = false;
   $("live").hidden = false;
   $("shutter").disabled = false;
+  addEventListener("devicemotion", onMotion);
 }
 
 function cameraOff(state) {
@@ -112,8 +113,28 @@ function stopCamera() {
   stream?.getTracks().forEach((track) => track.stop());
   stream = null;
   video.srcObject = null;
+  removeEventListener("devicemotion", onMotion);
+  setTurn(0);
   $("live").hidden = true;
   $("shutter").disabled = true;
+}
+
+// Which way is up, in degrees clockwise from the top of the screen: 0, 90, 180 or -90. With auto-rotate
+// off, the page and the camera frame stay portrait when the phone is turned, so the slide would go to the
+// server sideways. Gravity says how the phone is held; the shutter turns the photo back upright and the
+// aim brackets and hint turn to match. It changes only once the phone is 15° past the diagonal, so it
+// doesn't flicker at 45°, and not while the phone lies flat, when x and y say nothing.
+let turn = 0;
+function onMotion({ accelerationIncludingGravity: g }) {
+  if (!g || Math.hypot(g.x, g.y) < 4) return;
+  const angle = (Math.atan2(g.x, g.y) * 180) / Math.PI; // 0 upright, 90 turned counterclockwise
+  const nearest = Math.round(angle / 90) * 90;
+  if (Math.abs(angle - nearest) < 30) setTurn(nearest === -180 ? 180 : nearest);
+}
+function setTurn(degrees) {
+  if (degrees === turn) return;
+  turn = degrees;
+  $("aim").style.transform = turn ? `rotate(${turn}deg)` : "";
 }
 
 $("allow-camera").onclick = () => startCamera(true);
@@ -128,13 +149,13 @@ $("shutter").onclick = async () => {
   flash.classList.remove("go");
   void flash.offsetWidth; // restart the animation
   flash.classList.add("go");
-  const [blob, framed] = await Promise.all([draw(video, video.videoWidth, video.videoHeight), drawFramed()]);
+  const [blob, framed] = await Promise.all([draw(video, video.videoWidth, video.videoHeight, turn), drawFramed(turn)]);
   setTimeout(() => handle(blob, Date.now(), framed), 250); // let the flash show before Scanning covers it
 };
 
 // What was inside the aim brackets, for the Scanning screen. The lookup still gets the whole photo:
 // the server finds the slide itself, and people don't always fit it in the frame.
-function drawFramed() {
+function drawFramed(turn) {
   const box = video.getBoundingClientRect();
   const aim = $("aim").querySelector(".aim").getBoundingClientRect();
   // The video is object-fit: cover, so it's scaled up to fill its box and centred.
@@ -145,11 +166,9 @@ function drawFramed() {
   const sy = Math.max(0, (aim.top - top) / scale);
   const sw = Math.min(video.videoWidth - sx, aim.width / scale);
   const sh = Math.min(video.videoHeight - sy, aim.height / scale);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(aim.width * devicePixelRatio);
-  canvas.height = Math.round(aim.height * devicePixelRatio);
-  canvas.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-  return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  // The aim box is turned with the phone, and its bounding rect is the turned box, so this is the right
+  // part of the frame; upright() then turns it the right way up.
+  return upright(video, [sx, sy, sw, sh], aim.width * devicePixelRatio, aim.height * devicePixelRatio, turn);
 }
 
 $("photo").onchange = async (event) => {
@@ -195,12 +214,22 @@ async function readPhoto(file) {
 
 // At most 2560 px on the long side, about 1 MB. The server cuts the slide out of the photo, and from
 // the back of a room the slide is a fraction of it: at 1280 px a projected slide is about 400 px wide.
-function draw(source, width, height) {
+function draw(source, width, height, turn = 0) {
   const scale = Math.min(1, 2560 / Math.max(width, height));
+  return upright(source, [0, 0, width, height], width * scale, height * scale, turn);
+}
+
+// Draws the crop of `source` at width x height, turned back by `turn` degrees so the slide is upright.
+function upright(source, crop, width, height, turn) {
+  const [w, h] = [Math.round(width), Math.round(height)];
+  const sideways = Math.abs(turn) === 90;
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
-  canvas.getContext("2d").drawImage(source, 0, 0, canvas.width, canvas.height);
+  canvas.width = sideways ? h : w;
+  canvas.height = sideways ? w : h;
+  const ctx = canvas.getContext("2d");
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((-turn * Math.PI) / 180);
+  ctx.drawImage(source, ...crop, -w / 2, -h / 2, w, h);
   return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
 }
 
