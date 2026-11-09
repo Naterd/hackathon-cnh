@@ -185,7 +185,7 @@ Dash0 trial organization, region AWS `us-west-2`, dataset `default`.
 **What the app and ingest code need to do:**
 - **Traces come for free.** The operator injects OpenTelemetry into Python 3.10+ pods in monitored namespaces, with no SDK setup in our code. Leave the OTLP protocol at `http/protobuf`.
 - **Label the workloads** with `app.kubernetes.io/name` and `app.kubernetes.io/version`. Dash0 takes the service name and version from them, which separates deploys.
-- **Add our own signals** with the `opentelemetry` API, imported in a `try/except ImportError` as in `ingest/telemetry.py`. Don't install any `opentelemetry-*` package, not even `opentelemetry-api`: the operator turns itself off when it finds one. Put the match confidence on the lookup span, and count ingest progress: talks indexed, stills per second, Elasticsearch HTTP 400s.
+- **Add our own signals** with the `opentelemetry` API, imported in a `try/except ImportError` as in `ingest/telemetry.py`. Don't install any `opentelemetry-*` package: the operator turns itself off when it finds one. The one exception is `opentelemetry-api`, which fastapi requires; it's pinned in `app/requirements.txt` to the exact version the operator's SDK needs (1.44.0), and any other version turns tracing off. Put the match confidence on the lookup span, and count ingest progress: talks indexed, stills per second, Elasticsearch HTTP 400s.
 - **Browser monitoring:** add Dash0's web SDK script to `base.html`, and allow `https://ingress.us-west-2.aws.dash0.com` in the page's CSP `connect-src`.
 - **The API token never goes in this repo or the image.** The repo is public.
 
