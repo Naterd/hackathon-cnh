@@ -408,6 +408,7 @@ function renderMatch(photo) {
   const hero = $("hero-slide").parentElement;
   const slide = $("hero-slide");
   hero.classList.remove("has-slide");
+  swapHero(false);
   $("hero-photo").src = photoURL(photo);
   slide.onload = () => hero.classList.add("has-slide");
   slide.src = `/api/slide/${moment.id}`;
@@ -484,6 +485,14 @@ function renderStrip(slides, moment) {
   const here = strip.querySelector(".here");
   if (here) strip.scrollLeft = here.offsetLeft - (strip.clientWidth - here.offsetWidth) / 2;
 }
+
+// The inset in the hero's corner swaps places with the big picture: your photo or the matched slide.
+function swapHero(on) {
+  $("hero-slide").parentElement.classList.toggle("swapped", on);
+  $("hero-swap").setAttribute("aria-pressed", on);
+  $("hero-swap").ariaLabel = on ? "Show the matched slide full size" : "Show your photo full size";
+}
+$("hero-swap").onclick = () => swapHero(!$("hero-slide").parentElement.classList.contains("swapped"));
 
 $("back").onclick = () => (navigated ? history.back() : (location.hash = `#${tab}`));
 
