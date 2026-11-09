@@ -1,0 +1,11 @@
+# The load balancer's health check. Without this, GKE keeps the path it read
+# from the first pods' readiness probe.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: app
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /readyz
+    port: 8080

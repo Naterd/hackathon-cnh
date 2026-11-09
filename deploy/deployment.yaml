@@ -15,6 +15,9 @@ spec:
     metadata:
       labels:
         app: app
+        # Dash0 takes the service name from these.
+        app.kubernetes.io/name: slidekick
+        app.kubernetes.io/part-of: slidekick
     spec:
       containers:
         - name: app
@@ -24,7 +27,7 @@ spec:
               containerPort: 8080
           env:
             - name: TEAM_NAME
-              value: "__TEAM__"
+              value: "slidekick"
           resources:
             requests:
               cpu: 100m

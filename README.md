@@ -93,7 +93,11 @@ The header file keeps the token out of command lines, shell history and agent ou
 ## Working in this repo
 
 - **Pull before every commit:** `git pull --rebase --autostash`. Enable the hook that enforces it once per clone: `git config core.hooksPath .githooks`.
-- **Deploying:** push to `main`. The GitHub Action builds the image to GHCR and commits a `deploy: <sha>` tag change, and Argo CD on GKE syncs it. The repo and the image must stay public, because the cluster pulls without credentials.
+- **Deploying:** merge to `main`. The GitHub Action builds the image to GHCR and commits a `deploy: <sha>` tag change. Argo CD on GKE (Application `slidekick`, in namespace `argocd`) then syncs `deploy/` into namespace `slidekick`. The repo and the image must stay public, because the cluster pulls without credentials.
+  - **Rollback:** `git revert` the bad commit on `main`. Argo CD deploys the previous state.
+  - **Don't `kubectl edit` what Argo CD owns** (Deployment and Service `app`, BackendConfig `app`). Self-heal puts the git version back, so change those in git.
+  - The Service is in sync wave 1, so traffic switches only after the new Deployment is healthy. The load balancer's health check is `/readyz` (`deploy/backendconfig.yaml`).
+  - **Ingest Jobs aren't deployed by Argo CD.** Run them with `kubectl apply`, because Argo CD's prune and self-heal don't suit Jobs that run to completion.
 - **Secrets:** never put them in git, the image or a build argument. They live in Kubernetes Secrets: `app-credentials` for the app, and `ingest/elastic` (Elasticsearch URL and API key) for the ingest Jobs.
 - **The app contract:** a Dockerfile at the repo root; the app listens on 8080, serves `/healthz` and `/readyz`, and runs as user 1000. In the cluster it runs in namespace `slidekick` behind Service `app`, port 80.
 - **Radar:** the cluster is in our own Radar Cloud organization, not the hackathon's. Connect Claude Code with `claude mcp add --scope user radar-cloud --transport http https://api.radarhq.io/mcp`, then pick our organization when you authenticate. `AGENTS.md` and `.agents/skills/` came with the [Radar starter](https://github.com/skyhook-io/cnh-starter), which describes the hackathon's shared cluster; adjust as we go.
@@ -114,7 +118,7 @@ The header file keeps the token out of command lines, shell history and agent ou
 1. **Cluster:** a GKE Standard cluster with Workload Identity and the Cloud Storage FUSE driver, plus a tainted spot node pool for ingest. Install Argo CD and Argo Rollouts. Our scripts for this will move into `infra/`.
 2. **Edge:** reserve a global static IP, point the domain's A record at it (Cloudflare: DNS only), then apply the Ingress, the ManagedCertificate and the HTTPS-redirect FrontendConfig.
 3. **Elasticsearch:** create a vector-optimized Elastic Cloud Serverless project and an API key, and store them as Kubernetes Secrets.
-4. **Deploy:** `kubectl apply -f argocd/application-byo.yaml`. From then on, every push to `main` deploys.
+4. **Deploy:** `kubectl apply -f argocd/project.yaml -f argocd/application-byo.yaml`. The project file is needed because this Argo CD has no API server, so its `default` project doesn't exist. From then on, every merge to `main` deploys.
 
 ## Data and credits
 

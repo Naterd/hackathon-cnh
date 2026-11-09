@@ -1,0 +1,13 @@
+# This cluster's Argo CD has no API server, so the default project was never
+# created. Apply this before application-byo.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: slidekick
+  namespace: argocd
+spec:
+  sourceRepos:
+    - https://github.com/Naterd/hackathon-cnh.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: slidekick

@@ -1,13 +1,13 @@
-# Argo CD deploys this folder to your team's namespace. The GitHub Action
+# Argo CD deploys this folder to namespace slidekick. The GitHub Action
 # sets the image below on every push to main; don't edit newName or newTag
 # by hand.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: team-__TEAM__
+namespace: slidekick
 resources:
   - deployment.yaml
   - service.yaml
-  - httproute.yaml
+  - backendconfig.yaml
 images:
   - name: app
     newName: ghcr.io/naterd/hackathon-cnh
