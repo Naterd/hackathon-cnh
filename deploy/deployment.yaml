@@ -35,13 +35,18 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          # ELASTIC_URL and ELASTIC_ES_API_KEY, kept out of git.
+          envFrom:
+            - secretRef:
+                name: app-credentials
+          # The OCR models take 300-500 MB, and OCR is most of a lookup's CPU.
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 250m
+              memory: 1Gi
             limits:
-              cpu: 500m
-              memory: 256Mi
+              cpu: "1"
+              memory: 2Gi
           readinessProbe:
             httpGet:
               path: /readyz

@@ -1,10 +1,18 @@
+import logging
 import os
+import threading
+import urllib.error
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from PIL import UnidentifiedImageError
+
+import search
 
 HERE = Path(__file__).parent
 
@@ -12,7 +20,18 @@ HERE = Path(__file__).parent
 # from filling the pod's memory.
 MAX_UPLOAD_BYTES = 10_000_000
 
-app = FastAPI(openapi_url=None)
+log = logging.getLogger("slidekick")
+
+
+@asynccontextmanager
+async def lifespan(app):
+    # In the background, so a cold embedding service doesn't hold the pod out of rotation.
+    if search.configured():
+        threading.Thread(target=search.warm_up, daemon=True).start()
+    yield
+
+
+app = FastAPI(openapi_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 
 templates = Jinja2Templates(directory=HERE / "templates")
@@ -49,19 +68,17 @@ async def lookup(request: Request):
             raise HTTPException(413, "Photo too large")
     if not photo:
         raise HTTPException(400, "Send the photo as the request body")
+    if not search.configured():
+        raise HTTPException(503, "Search isn't configured: set ELASTIC_URL and ELASTIC_ES_API_KEY")
 
-    # Stub until the Elasticsearch lookup lands: every photo matches the talk behind
-    # docs/test-photos/appset-603s.jpg. Talks are ranked best first, like lookup() in
-    # docs/search_example.py, with the moments where the slide appeared.
-    return {
-        "talks": [
-            {
-                "talk_id": "9RvDczVIiS0",
-                "title": "Mastering ApplicationSet: Advanced Argo CD Automation",
-                "speakers": "Alexander Matyushentsev, Akuity",
-                "moments": [
-                    {"id": "9RvDczVIiS0-008", "start_sec": 549.5, "url": "https://youtu.be/9RvDczVIiS0?t=549"}
-                ],
-            }
-        ]
-    }
+    try:
+        return await run_in_threadpool(search.lookup, bytes(photo))
+    except UnidentifiedImageError:
+        raise HTTPException(400, "That isn't an image")
+    except urllib.error.HTTPError as e:
+        # The status only: the response body can echo the query, which holds the photo.
+        log.warning("Elasticsearch returned HTTP %s", e.code)
+        raise HTTPException(502, "Search failed")
+    except (urllib.error.URLError, TimeoutError) as e:
+        log.warning("Elasticsearch unreachable: %s", type(e).__name__)
+        raise HTTPException(502, "Search failed")

@@ -2,3 +2,10 @@
 fastapi==0.162.2
 jinja2==3.1.6
 uvicorn==0.54.0
+# OCR: the same versions as ingest/requirements.txt, so a photo's text is read the same
+# way as the slide stills it's matched against.
+rapidocr-onnxruntime==1.4.4
+onnxruntime==1.31.1
+opencv-python==5.0.0.93
+numpy==2.5.4
+pillow==13.0.0
