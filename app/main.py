@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import threading
 import urllib.error
 from contextlib import asynccontextmanager
@@ -7,7 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -69,14 +70,45 @@ async def lookup(request: Request):
             raise HTTPException(413, "Photo too large")
     if not photo:
         raise HTTPException(400, "Send the photo as the request body")
-    if not search.configured():
-        raise HTTPException(503, "Search isn't configured: set ELASTIC_URL and ELASTIC_ES_API_KEY")
 
     try:
-        return await run_in_threadpool(search.lookup, bytes(photo))
+        return await call(search.lookup, bytes(photo))
     except search.BadPhoto:
         raise HTTPException(400, "That isn't an image we can read")
+
+
+# The ids go into Elasticsearch URLs, so only YouTube video ids and still ids get through.
+TALK_ID = re.compile(r"[A-Za-z0-9_-]{11}")
+STILL_ID = re.compile(r"[A-Za-z0-9_-]{11}-\d{3}")
+
+
+@app.get("/api/slide/{still_id}")
+async def slide(still_id: str):
+    if not STILL_ID.fullmatch(still_id):
+        raise HTTPException(404, "No such slide")
+    media_type, image = await call(search.slide, still_id, missing="No such slide")
+    return Response(image, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/api/talk/{talk_id}")
+async def talk(talk_id: str):
+    found = TALK_ID.fullmatch(talk_id) and await call(search.talk, talk_id)
+    if not found:
+        raise HTTPException(404, "No such talk")
+    return found
+
+
+# `missing` is for single-document reads, where an Elasticsearch 404 means no such id. On a search
+# it means the index or alias is gone, a server problem: the page keeps a photo for any 5xx but
+# drops one on a 4xx.
+async def call(fn, *args, missing=None):
+    if not search.configured():
+        raise HTTPException(503, "Search isn't configured: set ELASTIC_URL and ELASTIC_ES_API_KEY")
+    try:
+        return await run_in_threadpool(fn, *args)
     except urllib.error.HTTPError as e:
+        if missing and e.code == 404:
+            raise HTTPException(404, missing)
         # The status only: the response body can echo the query, which holds the photo.
         log.warning("Elasticsearch returned HTTP %s", e.code)
         raise HTTPException(502, "Search failed")

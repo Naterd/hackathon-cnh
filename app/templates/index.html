@@ -1,19 +1,98 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>Photograph a KubeCon slide.</h1>
-<p>Get the talk, the speaker and a YouTube link that starts the moment that slide appeared.</p>
+<main>
+  <section id="capture" class="view dark" aria-labelledby="capture-title">
+    <h1 id="capture-title" class="visually-hidden">Capture a slide</h1>
+    <video id="viewfinder" playsinline muted aria-hidden="true"></video>
+    <div class="capture-top">
+      <span class="tag dark" id="live" hidden><span class="dot"></span>Camera on</span>
+      <span class="tag dark">370 talks · KubeCon NA 2024</span>
+    </div>
+    <div class="aim-wrap" id="aim" hidden>
+      <div class="aim bracketed"></div>
+      <p class="aim-hint">Fit the slide inside the frame</p>
+    </div>
 
-<input id="photo" class="visually-hidden" type="file" accept="image/*" capture="environment">
-<label class="button" for="photo">Take a photo</label>
+    <div class="cam-off" id="cam-off" hidden>
+      <p class="kicker">Camera</p>
+      <h2>Point it at a slide</h2>
+      <p id="cam-off-text">SlideKick uses the camera only while this screen is open. Only the photo you take is sent, to find the talk.</p>
+      <button class="button primary" id="allow-camera" type="button">Allow camera</button>
+      <label class="button" for="photo">Choose from Photos instead</label>
+    </div>
 
-<p id="status" aria-live="polite"></p>
+    <div class="capture-bottom">
+      <a class="roll-thumb" id="roll-thumb" href="#roll" aria-label="Photo roll"><img alt=""><span></span></a>
+      <button class="shutter" id="shutter" type="button" aria-label="Take a photo of the slide" disabled></button>
+      <input id="photo" class="visually-hidden" type="file" accept="image/*">
+      <label class="pick" for="photo"><svg aria-hidden="true"><use href="#i-images"/></svg><span class="visually-hidden">Choose from Photos</span></label>
+    </div>
+    <div class="flash" id="flash"></div>
+  </section>
 
-<section id="result" aria-labelledby="result-title" hidden>
-  <h2 id="result-title"></h2>
-  <p id="result-speakers"></p>
-  <a id="result-link" class="button"></a>
-</section>
+  <section id="scan" class="view scan" aria-labelledby="scan-title" hidden>
+    <div class="scan-box bracketed"><img id="scan-photo" alt=""><span class="scan-line"></span></div>
+    <h2 id="scan-title">Finding the talk</h2>
+    <p>Reading the slide and matching it against 12,146 slides from 370 talks</p>
+  </section>
 
-<img id="preview" alt="The slide you photographed" hidden>
+  <section id="match" class="view paper" aria-labelledby="match-title" hidden>
+    <div class="topbar">
+      <button class="icon-button" id="back" type="button" aria-label="Back"><svg aria-hidden="true"><use href="#i-arrow-left"/></svg></button>
+      <span class="tag tint" id="match-tag"></span>
+      <button class="icon-button" id="share" type="button" aria-label="Share this moment"><svg aria-hidden="true"><use href="#i-share"/></svg></button>
+    </div>
+    <figure class="hero bracketed">
+      <img class="hero-slide" id="hero-slide" alt="">
+      <img class="hero-photo" id="hero-photo" alt="Your photo">
+    </figure>
+    <p class="kicker" id="match-meta"></p>
+    <h2 class="match-title" id="match-title"></h2>
+    <div class="presenter" id="presenter">
+      <span class="initials" id="initials" aria-hidden="true"></span>
+      <p id="speakers"></p>
+    </div>
+    <a class="recording" id="recording">
+      <span class="video-thumb" aria-hidden="true"><svg><use href="#i-play"/></svg></span>
+      <span><strong id="recording-title"></strong><span id="recording-sub"></span></span>
+    </a>
+    <div class="section-head" id="strip-head" hidden><h3>The talk's slides</h3><span id="strip-count"></span></div>
+    <ol class="strip" id="strip"></ol>
+    <div id="others" hidden>
+      <div class="section-head"><h3>Not it?</h3><span>Other close matches</span></div>
+      <ul class="others" id="others-list"></ul>
+    </div>
+  </section>
+
+  <section id="roll" class="view paper" aria-labelledby="roll-title" hidden>
+    <h1 id="roll-title">Photo roll</h1>
+    <p class="sub" id="roll-sub"></p>
+    <div class="queue" id="queue" hidden>
+      <svg aria-hidden="true"><use href="#i-cloud-off"/></svg>
+      <p id="queue-text"></p>
+      <button class="ghost" id="retry" type="button">Retry</button>
+    </div>
+    <div id="roll-days"></div>
+    <footer class="credits">
+      <p>Talks from CNCF's KubeCon + CloudNativeCon North America 2024 recordings (CC BY), linked on YouTube.</p>
+      <p>version {{ version }}</p>
+    </footer>
+  </section>
+
+  <section id="timeline" class="view paper" aria-labelledby="timeline-title" hidden>
+    <h1 id="timeline-title">Your KubeCon</h1>
+    <p class="sub" id="timeline-sub"></p>
+    <div id="timeline-days"></div>
+  </section>
+</main>
+
+<p class="toast" id="toast" role="status" hidden></p>
+<p class="visually-hidden" id="status" aria-live="polite"></p>
+
+<nav class="tabbar" aria-label="Sections">
+  <a href="#capture" data-tab="capture"><svg aria-hidden="true"><use href="#i-camera"/></svg>Capture</a>
+  <a href="#roll" data-tab="roll"><svg aria-hidden="true"><use href="#i-image"/></svg>Roll</a>
+  <a href="#timeline" data-tab="timeline"><svg aria-hidden="true"><use href="#i-git-commit-vertical"/></svg>Timeline</a>
+</nav>
 {% endblock %}
