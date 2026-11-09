@@ -1,57 +1,59 @@
 ---
 name: debug-failure
-description: Find the root cause of a failure in this team's cluster at the hackathon and fix it in git. Use when the app is down, slow, crash-looping, not updating, returning errors, or a deploy or Argo CD sync failed.
+description: Find the root cause of a SlideKick failure and fix it in git. Use when slidekick.us is down, slow, erroring or not updating, a pod is crash-looping or Pending, an Argo CD sync failed, or an ingest Job failed.
 ---
 
 # Debug a failure, fix it in git
 
-Work from evidence: read what Radar shows, name the cause, then change the repo. Argo CD reverts direct edits to resources it owns, so fixes to those resources ship as commits. Non-git credential Secrets follow the [agent workflows](../../../examples/agent-workflows/README.md) recipe; never commit their values.
+Work from evidence: read what Radar and Dash0 show, name the cause, then change the repo. Argo CD reverts direct edits to what it owns, so those fixes ship as commits.
 
-The namespace is `team-<team>`, from `namespace:` in `deploy/kustomization.yaml`, and Radar Cloud lists the team's cluster as `<team>`.
-
-**Pass `cluster` and `namespace` to every Radar MCP call.** `cluster` is the `id` of the `list_clusters` entry whose `name` is exactly `<team>`. The organization has about 40 team clusters plus `cnh`; evidence from any other cluster is not this team's.
+Every Radar call takes `cluster` (our cluster's `id` from `list_clusters`) and a namespace: `slidekick` for the app, `ingest` for Jobs, `argocd` for the Application.
 
 ## 1. Stop the damage first
 
-- **Canary crash-looping or failing its checks** (`deploy/` uses `rollout.yaml`): call `manage_rollout` with `action: abort`. A canary that is only paused at its step isn't broken: that's the person's release decision, so don't abort it; use the `canary-release` skill. The stable version takes all traffic back at once. The next pushed version starts a fresh canary.
-- **Plain Deployment broken after a push**: the rollback is `git revert <bad commit>` and a push. Don't use `manage_gitops` rollback: auto-sync puts `main` back.
+- **Canary failing** (`deploy/` has `rollout.yaml`): `manage_rollout` with `action: abort`. A canary paused at its step isn't broken. That's the person's release decision: the `canary-release` skill.
+- **Deployment broken after a merge:** `git revert <bad commit>` on `main`, then the `ship` skill. Don't use `manage_gitops` rollback: auto-sync puts `main` back.
 
-Tell the person what you did before you go deeper.
+Tell the person what you did before going deeper.
 
 ## 2. Gather evidence
 
-1. Call `issues` for the namespace. It lists what's broken now, grouped and with a reason.
-2. Call `get_changes` for the namespace, `since: 1h`, to see what changed just before it broke. Image, env and probe diffs are listed first.
-3. Call `diagnose` on the failing workload: `kind: deployment`, or `kind: rollout` with `group: argoproj.io`, and `name: app`. You get logs, events and startup blockers in one call. For a sync problem, diagnose `kind: application` with `group: argoproj.io`.
-4. If you need more:
-   - `get_pod_logs` with `previous: true` gives the crash's own output;
-   - `get_events` covers scheduling, and the host's refusals and the budget (Warning `SyncError` on the pod);
-   - `get_resource` on the Application (`status.conditions`, `status.operationState`) covers sync errors.
+1. `issues` for the namespace: what's broken now, with a reason.
+2. `get_changes` for the namespace, `since: 1h`: what changed just before it broke.
+3. `diagnose` on the failing workload (`kind: deployment`, `name: app`). For a sync problem, diagnose the Application instead (`kind: application`, `group: argoproj.io`, `namespace: argocd`, `name: slidekick`). It bundles logs, events and startup blockers.
+4. For more: `get_pod_logs` with `previous: true` for a crash, `get_events` for scheduling, and `get_resource` on the Application (`status.conditions`, `status.operationState`) for sync errors.
+5. For errors or latency in a running app, check Dash0: the *SlideKick: Four Golden Signals* dashboard, then the failing spans and their logs.
 
-## 3. Common causes in this cluster
+## 3. Common causes here
 
 | Symptom | Usual cause | Fix |
 | --- | --- | --- |
-| `ImagePullBackOff`, 401/403/denied | The GHCR package is still private | The person makes it public: repo > Packages > Package settings > Change visibility |
-| `ImagePullBackOff`, not found | The tag wasn't built (the Action failed) | `gh run view --log-failed`, fix the build |
-| `CreateContainerConfigError`, missing Secret or key | The referenced non-git Secret or key is missing or misspelled | Have the person create or correct the Secret in Radar’s resource editor. Keep values out of git and agent output. Restart if an already-running app needs updated environment variables; correct a wrong Secret reference in git. |
-| `OOMKilled`, exit 137 | The container passed `limits.memory` | Fix the app's memory use, or raise the limit in `deploy/` (the team's budget caps limits at 8 GiB in total) |
+| `ImagePullBackOff`, 401/403 | The GHCR package is private | The person makes it public: repo > Packages > Package settings > Change visibility |
+| `ImagePullBackOff`, not found | The tag wasn't built | `gh run view <id> --log-failed`, fix the build |
+| `CreateContainerConfigError` | A referenced Secret or key is missing (`app-credentials` exists only once someone creates it) | The person creates it with kubectl or Radar's resource editor. Values never go in git or your output. Fix a wrong reference in git |
+| `OOMKilled`, exit 137 | Over `limits.memory` in `deploy/deployment.yaml` | Fix the memory use, or raise the limit |
 | `CrashLoopBackOff` | The app exits at startup | `get_pod_logs` with `previous: true` |
-| Ready 0/N, readiness failing | The app isn't on `$PORT` (8080), or `/readyz` doesn't answer 200 | Fix the app, or the probe paths in `deploy/` |
-| Pod `Pending`, Warning `SyncError` saying `exceeded quota: team-quota` | Over the team's budget, one total across every namespace in the cluster: 2 CPU / 4 GiB of requests, 4 CPU / 8 GiB of limits | Lower `replicas` or `requests`, or remove something you installed |
-| Pod `Pending`, any other Warning `SyncError` | The host refused the pod: it asks for privileged, hostPath, hostNetwork or hostPID. The event's message has the host's reason | Drop that setting (for a Helm chart, in its values). The host's rules don't bend |
-| Version differs from the expected image tag | Build or sync has not completed | Follow the `ship` skill. A kustomization-only fix intentionally keeps the old app version; verify its configuration instead. |
-| URL 404 or 503, pods healthy | Service `app` in `team-<team>` is missing, renamed, not on port 80, or selects no ready pods. The platform routes the URL to that Service; the HTTPRoute in `deploy/` plays no part | `diagnose` the Service (`kind: service`, `name: app`) with `probe: true`, and fix it in `deploy/`. If the Service is fine, ask an organizer |
-| Sync fails: namespace not found, or `metadata.annotations: Too long` on a CRD | The Application needs `CreateNamespace=true` or `ServerSideApply=true` | Add them to its `syncOptions`, read the live Application, and pass its complete current list as `sync_options`; follow the `ship` skill’s version-specific guidance |
+| Ready 0/N | The app isn't on 8080, or `/readyz` isn't 200 | Fix the app, or the probe paths in `deploy/` |
+| App pod `Pending`, `FailedScheduling` | The app pool (up to 6 nodes) is full, or requests are too big | Lower `replicas` or `requests` |
+| Ingest pod `Pending` | Missing `nodeSelector: {workload: ingest}` or the `workload=ingest:NoSchedule` toleration, or no spot capacity | Fix the Job. Spot capacity comes back on its own |
+| Ingest Job failing | Elasticsearch rejects bulk items (400) or throttles (429) | Read the per-item errors, and retry 429s. Never fetch from YouTube again |
+| slidekick.us 502, pods healthy | The load balancer's health check (`/readyz`, BackendConfig `app`) fails, or the NEG has no ready endpoints | `diagnose` Service `app` with `probe: true`, and read the `ingress.kubernetes.io/backends` annotation on Ingress `slidekick` |
+| Old version still serving | Build or sync not done | The `ship` skill |
+| Sync fails: resource not permitted | AppProject `slidekick` allows only namespace `slidekick`, and no cluster-scoped resources | Keep `deploy/` in `slidekick`. Run ingest Jobs with `kubectl apply` |
+| No traces in Dash0 | An `opentelemetry-*` package in the image (the operator turns itself off), uvicorn `--workers` or `--reload`, or a namespace without a `Dash0Monitoring` resource | Remove the package or the flag, or ask before adding monitoring to a namespace |
 
 ## 4. Fix, ship, confirm
 
-Make the smallest change that removes the cause. For repo changes, push and follow the `ship` skill through step 5: verify the built SHA, or the unchanged image tag plus the intended configuration for a deliberately skipped build. For a non-git Secret correction, verify the app's authenticated operation without printing the credential. Confirm `issues` no longer lists the problem.
+Make the smallest change that removes the cause, and ship it through a PR (or straight to `main` if it's small) with the `ship` skill. For a Secret fix, check that the app's authenticated call works, without printing the credential. Confirm `issues` no longer lists the problem.
 
 ## 5. When it's not obvious
 
-Suggest a hosted AI investigation. Hosted investigations cost the team nothing at the hackathon: they come from the organization's allowance. Once the person has asked for one, use the hosted tools if the organization-level `/mcp` connection advertises `start_investigation`; follow `examples/agent-workflows/README.md`. Otherwise give the person the failing resource's Radar Cloud link (format in AGENTS.md, "A real symptom you can't explain"): the sparkle button at the top right starts the investigation. The investigation tools do not apply remediation. Verify findings against primary evidence and apply fixes through the resource’s owner. New interactive runs, including MCP starts, are private unless the person shares them; sharing shows them to every team in the org.
+Suggest an AI investigation, and start one only when the person asks.
+- **Radar:** if the `/mcp` connection advertises `start_investigation`, follow "Delegate a real question to hosted AI SRE" in `examples/agent-workflows/README.md`, with namespace `slidekick`. Otherwise give the person the resource's link, where the sparkle button at the top right starts one: `https://app.radarhq.io/c/<cluster-id>/resources/deployments?resource=slidekick/app`.
+- **Dash0:** ask Agent0 for the root cause of the failing service or span.
+
+Neither applies fixes. Check their findings against primary evidence, and fix through git.
 
 ## Report
 
-Give the person three things: the cause, with the evidence that shows it; the commit or non-git Secret correction that fixed it; and what you checked to confirm it's fixed.
+The cause, with the evidence that shows it; the commit or Secret change that fixed it; and what you checked to confirm.
