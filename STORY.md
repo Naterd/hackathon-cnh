@@ -47,3 +47,32 @@ PR [#13](https://github.com/Naterd/hackathon-cnh/pull/13) "Fix Radar Checks find
 **Checks after** (`get_cluster_audit`, namespace `slidekick`): **6 → 3 findings.**
 - Fixed: `missingPDB`, `missingTopologySpread`, `automountServiceAccountToken`.
 - Still open, as expected: `readOnlyRootFs` (needs testing with the Dash0 injection), `podHARisk` (the default pool has one node; the soft spread takes effect when a second one appears), `orphanConfigMapSecret` on `app-credentials` (the app doesn't read it yet).
+
+## The story
+
+Nov 9, 2026 · all times Mountain.
+
+- **What we built:** [SlideKick](https://slidekick.us). Point a phone at a KubeCon slide, or at a laptop playing the talk, and get the talk, the speaker and a YouTube link at the second that slide was on screen; a camera roll becomes a timeline of your day. It's for attendees who missed a slide, a room or a talk. After [#29](https://github.com/Naterd/hackathon-cnh/pull/29) it also works with a screen reader: the slide is read out in its own words, along with what the speaker said at that moment.
+- **How we shipped:** 27 PRs and 61 commits since midnight, every PR reviewed by Gitar, and 25 releases, each built by GitHub Actions and synced to GKE by Argo CD, with every rollout on Radar's timeline. A merge is live in about 2.5 minutes ([#5](https://github.com/Naterd/hackathon-cnh/pull/5)). Gitar caught 15 real problems before merge and pushed 2 fixes itself, including the one that stopped a crafted upload from OOM-killing the pod ([#16](https://github.com/Naterd/hackathon-cnh/pull/16), `a8db50f`).
+- **What broke, and how we saw it:**
+  - Dash0 showed **zero traces** from the app at 2:40 PM, though it was serving traffic. The Dash0 injector had been logging why at every pod start: FastAPI pulls in `opentelemetry-api` 1.45.2, and the injector turns itself off unless it finds 1.44.0. **Agent0 opened the fix PR itself** ([#21](https://github.com/Naterd/hackathon-cnh/pull/21)), and traces were back at 2:53 PM.
+  - From 3:03 to 3:25 PM, three deploys failed on a GHCR permission change. The build logs showed it, and the package settings were fixed.
+- **The investigations:** at 12:32 PM Radar flagged a 4-talk ingest Job as Unschedulable. Its AI investigation first said "healthy", because it had read only the Job's events. We pointed it at the pod's events, and it revised to a root cause: each new spot node costs about 95 s (scale-up, CSI driver registration, cold image pulls). We decided to accept that cost for ingest rather than pre-scale ([investigation](https://app.radarhq.io/c/k8l3A-86hTM/investigations/chat_nnIgqoMG-hY1WF54?org=org_LAtK4qe79DlO), [above](#investigation)).
+- **What Elasticsearch does in one lookup:** one hybrid RRF query over 12,516 slide stills from 370 talks (image kNN with Jina embeddings, OCR keywords, text-to-image) plus a pixel-fingerprint leg, grouped by talk in code. In the last 2 hours, 36 real lookups, every one HTTP 200. Most were photos of a recording on a laptop or projector (25 `found=recording`). The median was 7.7 s, and the results page shows the split: *Matched in 7.5 s · reading the slide 3.8 s, search 0.8 s* ([#25](https://github.com/Naterd/hackathon-cnh/pull/25)).
+- **Checks, before and after:** Radar Checks for `slidekick` went from **6 findings to 1**.
+  - Fixed: the PodDisruptionBudget, topology spread and service-account token ([#13](https://github.com/Naterd/hackathon-cnh/pull/13)).
+  - `app-credentials` is now referenced ([#16](https://github.com/Naterd/hackathon-cnh/pull/16)), and the pods now span two nodes.
+  - Left: `readOnlyRootFs`, which needs testing against the Dash0 injector.
+  - `ingest`'s findings are ConfigMaps that only exist between Job runs.
+  - Meanwhile the synthetic check on `/healthz` has passed **308 of 308** runs, so the availability SLO is at 100%.
+
+### Screenshots
+
+- Radar timeline: https://app.radarhq.io/c/k8l3A-86hTM/timeline
+- The Argo CD Application in Radar: https://app.radarhq.io/c/k8l3A-86hTM/resources/applications?resource=argocd/slidekick&apiGroup=argoproj.io
+- Radar Checks for `slidekick`, next to the morning's: https://app.radarhq.io/checks?scope=k8l3A-86hTM&namespace=slidekick
+- The Radar investigation, with the follow-up: https://app.radarhq.io/c/k8l3A-86hTM/investigations/chat_nnIgqoMG-hY1WF54?org=org_LAtK4qe79DlO
+- The Agent0 thread and its PR [#21](https://github.com/Naterd/hackathon-cnh/pull/21)
+- Dash0's *SlideKick: Four Golden Signals* dashboard, plus the `slidekick-healthz` synthetic check and the `slidekick-availability` SLO
+- Gitar's review on [#16](https://github.com/Naterd/hackathon-cnh/pull/16) (the upload OOM, with its fix commit) and on [#4](https://github.com/Naterd/hackathon-cnh/pull/4) (the duplicate Argo CD Application)
+- A lookup on a phone: the photo in, the talk, the timing line and "Jump to 0:05" out
