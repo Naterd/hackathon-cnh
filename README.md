@@ -16,7 +16,59 @@ As of Nov 9, 10:15 MT. The app code starts at kickoff.
 | Data | All 370 downloadable KubeCon NA 2024 talks are in GCS: 720p video, metadata and English captions (263 from YouTube, 107 transcribed with Whisper). |
 | Dash0 | Operator installed on GKE. Namespaces `slidekick` and `ingest` are monitored, and Kubernetes metrics and logs are flowing. A four-golden-signals dashboard is up. See [Observability (Dash0)](#observability-dash0). |
 | Deploys | Live through GitOps (Nov 9, 11:11 MT): a merge to `main` builds the image, and Argo CD (Application `slidekick`) syncs it to namespace `slidekick` within about 3 minutes. |
-| App, ingest Jobs, Radar, Gitar | To do |
+| Ingest | First run done (Nov 9, ~11:20 MT): Job `ingest-extract` finished 66/66 in 9 min 10 s, and `ingest-index` finished in 76 s. `kubecon-moments` holds 39,602 documents. The Job manifests aren't in the repo yet. |
+| Radar, Gitar | Live. See [Sponsor tools](#sponsor-tools). |
+| App | FastAPI shell is merged (`app/main.py`, Jinja templates, static JS and CSS). The photo lookup and the camera-roll timeline are still to do. |
+
+## Sponsor tools
+
+Are we using it, what for, and where do you go to see it?
+
+| Tool | Track | What we use it for | Status | Where to look |
+| --- | --- | --- | --- | --- |
+| **Gitar** (Sonar) | AI code review | Reviews every PR against our rules | Live | The PR's **Checks** tab and the `gitar-bot` comment. Rules in [`.gitar/review/main.md`](.gitar/review/main.md). [app.gitar.ai](https://app.gitar.ai) |
+| **Dash0** | Observability | Traces, metrics and logs for the app and ingest; the golden-signals dashboard | Live | [app.dash0.com](https://app.dash0.com) > Dashboards > *SlideKick: Four Golden Signals* |
+| **Radar** | Kubernetes UI, AI SRE | Watching and operating the GKE cluster; deploys and investigations from Claude Code | Live | [app.radarhq.io](https://app.radarhq.io), in our own organization, not Cloud Native Hackathon |
+| **Elasticsearch** | Search and vector DB | The document store for every slide still, with hybrid search for lookups | Live | [cloud.elastic.co](https://cloud.elastic.co) > Serverless project `slidekick` > Kibana |
+
+### Gitar: AI code review
+
+- **How it's wired:** the Gitar GitHub App is installed on this repo. Every PR gets a `Gitar` check and a `gitar-bot` review comment.
+- **What it enforces:** [`.gitar/review/main.md`](.gitar/review/main.md), which lists what blocks a merge: secrets, the app contract, the deploy bot's lines, Elasticsearch semantic-field limits and ingest Job requirements. PR automations would go in `.gitar/rules/`, which is empty so far.
+- **How we work with it:** code, manifest and CI changes go through a PR. Read Gitar's findings before merging, and when it misses a project gotcha, add that gotcha to `main.md`. A review can take several minutes; PR #5's check ran for about 4.5.
+- **Not yet:** CI-failure diagnosis and auto-apply. These need a CI job that runs on `pull_request`. Our only workflow runs on pushes to `main`, so a PR has no CI for Gitar to fix.
+
+### Dash0: observability
+
+- **How it's wired:** the Dash0 operator in namespace `dash0-system` injects OpenTelemetry into pods in `slidekick` and `ingest`. The app and the ingest Jobs export traces, metrics and logs with no SDK setup in our code. `ingest/telemetry.py` adds per-talk and per-phase spans, plus the stills and documents counters.
+- **Where to look:** [app.dash0.com](https://app.dash0.com) > Dashboards > *SlideKick: Four Golden Signals*, which has sections for the app, ingest Jobs, and ingest pipeline. Region `us-west-2`, dataset `default`.
+- **Access:** the API token is in Secret `dash0-system/dash0-authorization-secret`. The steps for reading it safely are under [Observability (Dash0)](#observability-dash0).
+- **Not yet:** a synthetic check on `/healthz`, an SLO, browser monitoring, and an Agent0 investigation.
+
+### Radar: Kubernetes UI and AI SRE
+
+- **How it's wired:** the Radar agent (1.20.2) runs in namespace `radar` on cluster `cnh` and reports to our own Radar Cloud organization. Its connection config is in Secret `radar/radar-cloud-config`. Don't touch it, and don't upgrade Radar.
+- **Where to look:** [app.radarhq.io](https://app.radarhq.io), then switch to our organization and open the cluster for Resources, Timeline, Issues and Checks. Take the Checks before and after screenshots there.
+- **From Claude Code:** run `claude mcp add --scope user radar-cloud --transport http https://api.radarhq.io/mcp`, then `/mcp` > radar-cloud > Authenticate, and pick **our** organization. The `ship`, `debug-failure` and `demo-story` skills in `.agents/skills/` use it.
+- **For the judges:** at least one AI investigation on a real issue, and the day's story from Radar's timeline.
+
+### Elasticsearch: document store and search
+
+- **How it's wired:** an Elastic Cloud Serverless project, `slidekick` (vector-optimized, Elasticsearch 9.7.0). Everything lives in index **`kubecon-moments-v1`**, reached through alias **`kubecon-moments`**: one document per slide still, with talk metadata, timings, OCR text and captions.
+  - `slide` (the image), `said` (captions) and `abstract` are `semantic` fields, embedded by Elastic's inference service with `.jina-embeddings-v5-omni-small`.
+  - A lookup is one hybrid query: RRF over image kNN, OCR keywords and text-to-image.
+- **Where to look:** [cloud.elastic.co](https://cloud.elastic.co) > Serverless projects > `slidekick` > open Kibana > Discover on `kubecon-moments`. Or use Dev Tools: `GET kubecon-moments/_count`, `GET kubecon-moments/_mapping`.
+- **Access from a terminal or agent:** the URL and API key are in Secret `ingest/elastic` (keys `ELASTIC_URL` and `ELASTIC_ES_API_KEY`). **Both count as secrets.** Keep them out of git, chats and output.
+
+  ```bash
+  (
+    umask 077
+    kubectl -n ingest get secret elastic -o jsonpath='{.data.ELASTIC_ES_API_KEY}' | base64 -d | sed 's/^/Authorization: ApiKey /' > ~/.es-auth-header
+    kubectl -n ingest get secret elastic -o jsonpath='{.data.ELASTIC_URL}' | base64 -d > ~/.es-url
+  )
+  curl -s -H @"$HOME/.es-auth-header" "$(cat ~/.es-url)/kubecon-moments/_count"
+  ```
+- **Rules that bite:** exclude `slide` and `said` from `_source` in every search. Images must be at most 1 MB decoded. Filters go inside the `knn` clause. Bulk returns 200 even when items fail. See `AGENTS.md`.
 
 ## How it works
 
@@ -72,8 +124,10 @@ telemetry.flush()                           # also runs at exit
 
 ```bash
 gcloud container clusters get-credentials cnh --zone us-west3-a --project five9-cyclops-playground --dns-endpoint
-kubectl -n dash0-system get secret dash0-authorization-secret -o jsonpath='{.data.token}' | base64 -d | sed 's/^/Authorization: Bearer /' > ~/.dash0-auth-header
-chmod 600 ~/.dash0-auth-header
+(
+  umask 077
+  kubectl -n dash0-system get secret dash0-authorization-secret -o jsonpath='{.data.token}' | base64 -d | sed 's/^/Authorization: Bearer /' > ~/.dash0-auth-header
+)
 curl -s -H @"$HOME/.dash0-auth-header" "https://api.us-west-2.aws.dash0.com/api/dashboards?dataset=default"
 ```
 
