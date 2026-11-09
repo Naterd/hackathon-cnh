@@ -1,4 +1,4 @@
-"""Smoke test for the FastAPI app. Run from app/: python ../ci/app_smoke.py"""
+"""Smoke test for the FastAPI app. Run from app/: python ../tests/app_smoke.py"""
 
 import sys
 

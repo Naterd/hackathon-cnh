@@ -5,7 +5,7 @@ on:
     paths:
       - app/**
       - Dockerfile
-      - ci/app_smoke.py
+      - tests/app_smoke.py
       - .github/workflows/app-ci.yaml
   workflow_dispatch:
 permissions:
@@ -23,6 +23,6 @@ jobs:
         run: pip install -r app/requirements.txt httpx
       - name: Smoke test
         working-directory: app
-        run: python ../ci/app_smoke.py
+        run: python ../tests/app_smoke.py
       - name: Build the image
         run: docker build --build-arg APP_VERSION=ci -t slidekick-app:ci .
