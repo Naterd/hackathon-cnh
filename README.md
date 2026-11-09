@@ -14,7 +14,8 @@ As of Nov 9, 10:15 MT. The app code starts at kickoff.
 | GKE cluster | Up. App pool: 1–6 × e2-standard-4. Spot ingest pool: 0–32 × e2-standard-8 (up to 256 vCPUs). Argo CD and Argo Rollouts are installed. |
 | Elasticsearch | Serverless project `slidekick` (vector-optimized, 9.7). `.jina-embeddings-v5-omni-small` returned the right slide for a simulated phone photo (0.94 against 0.72). Bulk indexing from GKE reaches about 75 images a second. |
 | Data | All 370 downloadable KubeCon NA 2024 talks are in GCS: 720p video, metadata and English captions (263 from YouTube, 107 transcribed with Whisper). |
-| App, ingest Jobs, Radar, Dash0, Gitar | To do |
+| Dash0 | Operator installed on GKE. Namespaces `slidekick` and `ingest` are monitored, and Kubernetes metrics and logs are flowing. A four-golden-signals dashboard is up. See [Observability (Dash0)](#observability-dash0). |
+| App, ingest Jobs, Radar, Gitar | To do |
 
 ## How it works
 
@@ -23,6 +24,38 @@ As of Nov 9, 10:15 MT. The app code starts at kickoff.
 3. **Camera roll.** Read each photo's EXIF time in the browser, match every photo, and place it on a timeline. For this week's photos, the session running at that time ranks higher.
 
 Stack: FastAPI with server-rendered pages, a PWA front end in plain JavaScript, Elasticsearch Serverless with Elastic Inference Service, and GKE with Argo CD.
+
+## Observability (Dash0)
+
+Dash0 trial organization, region AWS `us-west-2`, dataset `default`.
+
+| Endpoint | Value |
+| --- | --- |
+| OTLP gRPC | `ingress.us-west-2.aws.dash0.com:4317` |
+| OTLP HTTP | `https://ingress.us-west-2.aws.dash0.com` |
+| API | `https://api.us-west-2.aws.dash0.com` |
+
+**On the cluster:**
+- The Dash0 operator 0.159.0 runs in namespace `dash0-system` (Helm release `dash0-operator`). Its auth token is in Secret `dash0-system/dash0-authorization-secret`.
+- A `Dash0Monitoring` resource in `slidekick` and in `ingest` turns on traces, metrics and pod logs for those namespaces.
+- Python auto-instrumentation is on.
+- The collector DaemonSet tolerates the spot pool's `workload=ingest:NoSchedule` taint, so ingest Jobs have a node-local collector.
+
+**What the app and ingest code need to do:**
+- **Traces come for free.** The operator injects OpenTelemetry into Python 3.10+ pods in monitored namespaces, with no SDK setup in our code. Leave the OTLP protocol at `http/protobuf`.
+- **Label the workloads** with `app.kubernetes.io/name` and `app.kubernetes.io/version`. Dash0 takes the service name and version from them, which separates deploys.
+- **Add our own signals** with `opentelemetry-api`. Put the match confidence on the lookup span, and count ingest progress: talks indexed, stills per second, Elasticsearch HTTP 400s.
+- **Browser monitoring:** add Dash0's web SDK script to `base.html`, and allow `https://ingress.us-west-2.aws.dash0.com` in the page's CSP `connect-src`.
+- **The API token never goes in this repo or the image.** The repo is public.
+
+**Dashboard: "SlideKick: Four Golden Signals"** has one section for the app and one for ingest, each covering latency, traffic, errors and saturation. Latency, traffic and errors come from Dash0's span metrics (`dash0_spans_total`, `dash0_spans_duration_seconds_bucket`), filtered by `k8s_namespace_name`, `otel_span_kind` and `otel_span_status_code`. Saturation comes from the pods' CPU and memory against their limits, and from ready nodes. The panels stay empty until instrumented code is running.
+
+**Gotchas:**
+- A namespace's data shows up about 2 minutes after its `Dash0Monitoring` resource is applied.
+- Applying `Dash0Monitoring` restarts the pods already running in that namespace, so they get instrumented.
+- `/api/v1/series` returns nothing for the span metrics, but `query` does. Don't conclude they're missing from a series lookup.
+
+**Still to do:** a synthetic check on `https://slidekick.us/healthz`, a p95 shutter-to-answer SLO, browser monitoring, and one Agent0 investigation of a real issue for the demo.
 
 ## Working in this repo
 
