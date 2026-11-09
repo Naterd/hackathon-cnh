@@ -4,6 +4,12 @@ metadata:
   name: app
   labels:
     app: app
+  annotations:
+    # The GKE Ingress on slidekick.us routes to this Service through a NEG.
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "app"}'
+    # Switch traffic only after the Deployment is healthy.
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   selector:
     app: app

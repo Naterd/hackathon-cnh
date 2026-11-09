@@ -1,26 +1,20 @@
-# Only for a cluster you bring (not the one the hackathon gives you): an Argo CD
-# Application in the argocd namespace using the default project, deploying
-# deploy/ into team-__TEAM__ (created if missing). Your cluster needs Argo CD
-# (and Argo Rollouts for examples/canary). Remove httproute.yaml from
-# deploy/kustomization.yaml first: it points at the hackathon's gateway.
-#   kubectl apply -f argocd/application-byo.yaml
+# Deploys deploy/ into namespace slidekick on our GKE cluster. Apply once:
+#   kubectl apply -f argocd/project.yaml -f argocd/application-byo.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: app-__TEAM__
+  name: slidekick
   namespace: argocd
 spec:
-  project: default
+  project: slidekick
   source:
-    repoURL: https://github.com/OWNER/REPO.git
+    repoURL: https://github.com/Naterd/hackathon-cnh.git
     targetRevision: main
     path: deploy
   destination:
     server: https://kubernetes.default.svc
-    namespace: team-__TEAM__
+    namespace: slidekick
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
