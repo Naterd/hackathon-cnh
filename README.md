@@ -15,7 +15,7 @@ As of Nov 9, 10:15 MT. The app code starts at kickoff.
 | Elasticsearch | Serverless project `slidekick` (vector-optimized, 9.7). `.jina-embeddings-v5-omni-small` returned the right slide for a simulated phone photo (0.94 against 0.72). Bulk indexing from GKE reaches about 75 images a second. |
 | Data | All 370 downloadable KubeCon NA 2024 talks are in GCS: 720p video, metadata and English captions (263 from YouTube, 107 transcribed with Whisper). |
 | Dash0 | Operator installed on GKE. Namespaces `slidekick` and `ingest` are monitored, and Kubernetes metrics and logs are flowing. A four-golden-signals dashboard is up. See [Observability (Dash0)](#observability-dash0). |
-| Deploys | Live through GitOps (Nov 9, 11:11 MT): a merge to `main` builds the image, and Argo CD (Application `slidekick`) syncs it to namespace `slidekick` within about 3 minutes. `slidekick.us` serves the Node starter until the Python app lands. |
+| Deploys | Live through GitOps (Nov 9, 11:11 MT): a merge to `main` builds the image, and Argo CD (Application `slidekick`) syncs it to namespace `slidekick` within about 3 minutes. |
 | App, ingest Jobs, Radar, Gitar | To do |
 
 ## How it works
@@ -101,13 +101,14 @@ The header file keeps the token out of command lines, shell history and agent ou
   - **Ingest Jobs aren't deployed by Argo CD.** Run them with `kubectl apply`, because Argo CD's prune and self-heal don't suit Jobs that run to completion.
 - **Secrets:** never put them in git, the image or a build argument. They live in Kubernetes Secrets: `app-credentials` for the app, and `ingest/elastic` (Elasticsearch URL and API key) for the ingest Jobs.
 - **The app contract:** a Dockerfile at the repo root; the app listens on 8080, serves `/healthz` and `/readyz`, and runs as user 1000. In the cluster it runs in namespace `slidekick` behind Service `app`, port 80.
-- **Radar:** the cluster is in our own Radar Cloud organization, not the hackathon's. Connect Claude Code with `claude mcp add --scope user radar-cloud --transport http https://api.radarhq.io/mcp`, then pick our organization when you authenticate. `AGENTS.md` and `.agents/skills/` came with the [Radar starter](https://github.com/skyhook-io/cnh-starter), which describes the hackathon's shared cluster; adjust as we go.
+- **Run the app locally:** in `app/`, `pip install -r requirements.txt`, then `uvicorn main:app --reload --port 8080`. Use `--reload` only on your laptop.
+- **Radar:** the cluster is in our own Radar Cloud organization, not the hackathon's. Connect Claude Code with `claude mcp add --scope user radar-cloud --transport http https://api.radarhq.io/mcp`, then pick our organization when you authenticate. `AGENTS.md` and `.agents/skills/` started from the [Radar starter](https://github.com/skyhook-io/cnh-starter) and now describe our cluster.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `app/` | The app. Still the starter's Node placeholder, to be replaced by the Python app. |
+| `app/` | The FastAPI app: `main.py`, Jinja templates in `templates/`, plain JavaScript and CSS in `static/` |
 | `deploy/` | Kubernetes manifests that Argo CD syncs |
 | `argocd/` | Argo CD Applications. On our cluster, use `application-byo.yaml`. |
 | `.githooks/` | The pull-before-commit hook |
