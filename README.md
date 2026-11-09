@@ -16,7 +16,7 @@ As of Nov 9, 10:15 MT. The app code starts at kickoff.
 | Data | All 370 downloadable KubeCon NA 2024 talks are in GCS: 720p video, metadata and English captions (263 from YouTube, 107 transcribed with Whisper). |
 | Dash0 | Operator installed on GKE. Namespaces `slidekick` and `ingest` are monitored, and Kubernetes metrics and logs are flowing. A four-golden-signals dashboard is up. See [Observability (Dash0)](#observability-dash0). |
 | Deploys | Live through GitOps (Nov 9, 11:11 MT): a merge to `main` builds the image, and Argo CD (Application `slidekick`) syncs it to namespace `slidekick` within about 3 minutes. |
-| Ingest | First run done (Nov 9, ~11:20 MT): Job `ingest-extract` finished 66/66 in 9 min 10 s, and `ingest-index` finished in 76 s. `kubecon-moments` holds 39,602 documents. The Job manifests aren't in the repo yet. |
+| Ingest | First run done (Nov 9, ~11:20 MT): Job `ingest-extract` finished 66/66 in 9 min 10 s, and `ingest-index` finished in 76 s. `kubecon-moments` holds 12,516 documents, one per slide still, covering all 370 talks. The Job manifests aren't in the repo yet. |
 | Radar, Gitar | Live. See [Sponsor tools](#sponsor-tools). |
 | App | FastAPI shell is merged (`app/main.py`, Jinja templates, static JS and CSS). The photo lookup and the camera-roll timeline are still to do. |
 
@@ -93,6 +93,7 @@ Are we using it, what for, and where do you go to see it?
   curl -s -H @"$HOME/.es-auth-header" "$(cat ~/.es-url)/kubecon-moments/_count"
   ```
 - **How the app queries it:** [`docs/search.md`](docs/search.md), with a runnable example in `docs/search_example.py`.
+- **Count with `_count`, not `_cat/indices`.** `_cat`'s `docs.count` includes the nested chunks the `semantic` fields create, about 3 per still, so it shows 39,602 for our 12,516 documents.
 - **Rules that bite:** exclude `slide` and `said` from `_source` in every search. Images must be at most 1 MB decoded. Filters go inside the `knn` clause. Bulk returns 200 even when items fail. See `AGENTS.md`.
 
 ## Demo-ready checklist
@@ -152,7 +153,7 @@ Judged on: running on Kubernetes with Radar connected; Radar's UI and MCP used t
 
 Judged on: Elasticsearch as the core data layer; smart search (keyword, semantic, vector or hybrid).
 
-- [x] Serverless project `slidekick`; alias `kubecon-moments` → `kubecon-moments-v1`, 39,602 documents; semantic `slide`, `said` and `abstract` fields with Jina
+- [x] Serverless project `slidekick`; alias `kubecon-moments` → `kubecon-moments-v1`, 12,516 documents (one per slide still, all 370 talks); semantic `slide`, `said` and `abstract` fields with Jina
 - [x] Hybrid RRF lookup documented and runnable: [`docs/search.md`](docs/search.md), `docs/search_example.py`
 - [x] Accuracy measured with `ingest/eval.py`; results in [`docs/results.md`](docs/results.md)
 - [x] **`/api/lookup` runs the real hybrid query** ([#16](https://github.com/Naterd/hackathon-cnh/pull/16), [#19](https://github.com/Naterd/hackathon-cnh/pull/19)). Live test at 2:56 PM: `docs/test-photos/appset-603s.jpg` returned *Mastering ApplicationSet: Advanced Argo CD Automation* as the top talk, with moments at 549 s, 269 s and 615 s
