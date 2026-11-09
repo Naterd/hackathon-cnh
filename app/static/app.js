@@ -60,7 +60,8 @@ function show(talk) {
   result.hidden = false;
   // The card shows the same thing; keep the sentence for screen readers only.
   status.classList.add("visually-hidden");
-  status.textContent = `Found it: ${talk.title}, by ${talk.speakers}. The slide appears at ${at}.`;
+  const by = talk.speakers ? `, by ${talk.speakers}` : "";
+  status.textContent = `Found it: ${talk.title}${by}. The slide appears at ${at}.`;
 }
 
 // 549.5 -> "9:09", 3723 -> "1:02:03"

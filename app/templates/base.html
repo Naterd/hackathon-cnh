@@ -9,6 +9,17 @@
   <link rel="icon" href="/static/icon-192.png">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css?v={{ version }}">
+  {% if dash0_web_token %}
+  <script>
+    window.dash0 = window.dash0 || function () { (window.dash0._q = window.dash0._q || []).push(arguments); };
+    dash0("init", {
+      serviceName: "slidekick-web",
+      endpoint: { url: "https://ingress.us-west-2.aws.dash0.com", authToken: "{{ dash0_web_token }}", dataset: "default" },
+      additionalSignalAttributes: { "service.version": "{{ version }}" },
+    });
+  </script>
+  <script src="https://unpkg.com/@dash0/sdk-web@0.30.0/dist/dash0.iife.js" integrity="sha384-cITJaCCgsy3efWq59Bp2ihU/Oh7ckYNOEHPwWoXhcHbGyCVNoEnnjkQaAI0Pzyct" crossorigin="anonymous" defer></script>
+  {% endif %}
   <script src="/static/app.js?v={{ version }}" defer></script>
 </head>
 <body>
