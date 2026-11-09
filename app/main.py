@@ -10,7 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from PIL import UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 
 import search
 
@@ -73,8 +73,8 @@ async def lookup(request: Request):
 
     try:
         return await run_in_threadpool(search.lookup, bytes(photo))
-    except UnidentifiedImageError:
-        raise HTTPException(400, "That isn't an image")
+    except (UnidentifiedImageError, Image.DecompressionBombError, ValueError, OSError):
+        raise HTTPException(400, "That isn't an image we can read")
     except urllib.error.HTTPError as e:
         # The status only: the response body can echo the query, which holds the photo.
         log.warning("Elasticsearch returned HTTP %s", e.code)

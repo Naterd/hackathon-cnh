@@ -14,6 +14,7 @@ from rapidocr_onnxruntime import RapidOCR
 INDEX = "kubecon-moments"  # alias; points at the current index version
 EVENT = "kubecon-na-2024"
 MAX_BYTES = 900_000  # the semantic field takes at most 1 MB of decoded image bytes
+MAX_PIXELS = 50_000_000
 FIELDS = ["talk_id", "title", "speakers_text", "start_sec", "url"]
 
 log = logging.getLogger("slidekick.search")
@@ -44,7 +45,11 @@ def es(method, path, body):
 
 def prepare(photo):
     """Upright JPEG under the field's limit, as the semantic field's image object."""
-    im = ImageOps.exif_transpose(Image.open(io.BytesIO(photo))).convert("RGB")
+    im = Image.open(io.BytesIO(photo))
+    if im.width * im.height > MAX_PIXELS:
+        raise ValueError("image too large")
+    im.draft("RGB", (2560, 2560))
+    im = ImageOps.exif_transpose(im).convert("RGB")
     im.thumbnail((1280, 1280))
     for quality in (85, 70, 55):
         buf = io.BytesIO()
