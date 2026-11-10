@@ -52,6 +52,7 @@ If Elastic's inference service is rate-limited, the lookup answers from keywords
 | A laptop playing the talk | 92% | 47% |
 | The slide alone | 82% | 69% |
 | A projector, video full screen | 76% | not measured |
+| A projector, video in a browser window | 48% | not measured |
 | All photos | 74.5% (83.5% in the top three) | 58% |
 
 **The timeline, and this week's talks.** Photos stay on the phone, and each matched talk lands on a timeline of your day. The same index is designed to serve a conference that is still happening: with no recordings yet, a photo matches the speaker's posted deck and the sessions running at that time, then resolves to the exact second when the recording is published. Only 2024 data is loaded today.
