@@ -1,24 +1,76 @@
 # SlideKick
 
-Photograph a KubeCon slide and get the talk, the speaker and a YouTube link that starts the moment that slide appeared. Upload a camera roll and get your conference day back as a timeline.
+Photograph a KubeCon slide and get the talk, the speaker and a YouTube link that starts the moment that slide appeared. Every photo you take builds a timeline of your conference.
 
-Built at the [Cloud Native Hackathon](https://www.wemakedevs.org/hackathons/cnh), Salt Lake City, November 9, 2026. Live at **https://slidekick.us**.
+Built in one day at the [Cloud Native Hackathon](https://www.wemakedevs.org/hackathons/cnh), Salt Lake City, November 9, 2026. Live at **https://slidekick.us**: open it on a phone.
+
+| 1. Capture | 2. Finding the talk | 3. The match | 4. Your roll | 5. Your timeline |
+| :---: | :---: | :---: | :---: | :---: |
+| <img src="docs/screenshots/1-capture.jpg" width="170" alt="Capture screen: Snap a slide. Get the talk."> | <img src="docs/screenshots/2-finding.jpg" width="170" alt="Scanning screen: the photo being matched"> | <img src="docs/screenshots/3-match.jpg" width="170" alt="Match screen: the matched slide, the talk and a link into the recording"> | <img src="docs/screenshots/4-roll.jpg" width="170" alt="Roll: the photos taken so far"> | <img src="docs/screenshots/5-timeline.jpg" width="170" alt="Timeline: the talks photographed, in order"> |
+| Point the camera at a slide, or choose photos. | The photo is matched against 12,146 slides from 370 talks. | The talk, the speaker, what was being said, and a link to that second. | Your photos, kept on your phone. | Each talk you saw, in order. |
+
+Screenshots of the live site on November 9, from three test photos. All three matched the right talk and slide.
+
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph ingest["Ingest: Jobs on GKE spot nodes"]
+    direction LR
+    V["370 recordings<br/>179 hours"] --> C["Cut into slide stills<br/>(ffmpeg scene detection)"] --> O["Read each slide (OCR)<br/>and attach its captions"]
+  end
+  O --> ES[("Elasticsearch<br/>12,146 slides")]
+  subgraph lookup["Lookup: the app"]
+    direction LR
+    P["Phone photo"] --> F["Find the slide in it<br/>and flatten it"] --> Q["Search three ways:<br/>fingerprint, image, keywords"]
+  end
+  Q --> ES
+  ES --> R["Talk, speaker and a<br/>YouTube link at that second"]
+```
+
+**Ingest: recordings in, slides out.** One pod per talk on our GKE cluster's spot pool does five things:
+1. Finds the slide area. Most recordings show the slide in a fixed box beside the speaker; stage keynotes use the full frame.
+2. Detects slide changes with ffmpeg scene detection, so each slide has the second it came on screen.
+3. Keeps one still per slide, merging near-identical neighbours.
+4. Reads the slide with OCR.
+5. Attaches the captions spoken while the slide was up.
+
+All 370 KubeCon NA 2024 talks took 25 minutes on 96 pods (256 spot vCPUs), and 6.5 more to load into Elasticsearch. Details: [`ingest/README.md`](ingest/README.md).
+
+**Lookup: a photo in, a talk and a second out.**
+1. Find the slide inside the photo and flatten it. Every boxed recording has the same frame around its slide, so we match that frame; it works off a laptop or a projector screen.
+2. Try a pixel fingerprint first: 576 numbers, searched with a plain vector search in about 0.1 s. A confident hit is the answer.
+3. Otherwise run one hybrid query in Elasticsearch: image similarity (Jina embeddings through Elastic's inference service), keywords on the slide text and captions, and text-to-image, merged with reciprocal rank fusion.
+4. Group the hits by talk, and link to the second that slide came on screen.
+
+If Elastic's inference service is rate-limited, the lookup answers from keywords and the fingerprint, and says the match is less certain. Details: [`docs/search.md`](docs/search.md), reference code in [`docs/search_example.py`](docs/search_example.py).
+
+**What we measured.** An eval renders random moments as phone photos and runs the real lookup against the live index, on GKE. On 200 simulated photos across all 370 talks ([`docs/results.md`](docs/results.md)):
+
+| Photo of | Right talk first | At midday, before the afternoon's changes |
+| --- | --- | --- |
+| A laptop playing the talk | 92% | 47% |
+| The slide alone | 82% | 69% |
+| A projector, video full screen | 76% | not measured |
+| A projector, video in a browser window | 48% | not measured |
+| All photos | 74.5% (83.5% in the top three) | 58% |
+
+**The timeline, and this week's talks.** Photos stay on the phone, and each matched talk lands on a timeline of your day. The same index is designed to serve a conference that is still happening: with no recordings yet, a photo matches the speaker's posted deck and the sessions running at that time, then resolves to the exact second when the recording is published. Only 2024 data is loaded today.
+
+**Stack.** FastAPI with server-rendered pages and a plain-JavaScript PWA; Elasticsearch Serverless with Elastic's inference service as the only data store; GKE with Argo CD for GitOps deploys; Gitar reviewing every PR; Dash0 and Radar watching the app and the ingest Jobs.
 
 ## Status
 
-As of Nov 9, 10:15 MT. The app code starts at kickoff.
+As of Nov 9, 5:00 PM MT.
 
 | Piece | State |
 | --- | --- |
-| HTTPS at `slidekick.us` | Live: Google-managed certificate, HTTP redirects to HTTPS. Serves a placeholder until the app ships. `www` is waiting on its DNS record. |
-| GKE cluster | Up. App pool: 1–6 × e2-standard-4. Spot ingest pool: 0–32 × e2-standard-8 (up to 256 vCPUs). Argo CD and Argo Rollouts are installed. |
-| Elasticsearch | Serverless project `slidekick` (vector-optimized, 9.7). `.jina-embeddings-v5-omni-small` returned the right slide for a simulated phone photo (0.94 against 0.72). Bulk indexing from GKE reaches about 75 images a second. |
-| Data | All 370 downloadable KubeCon NA 2024 talks are in GCS: 720p video, metadata and English captions (263 from YouTube, 107 transcribed with Whisper). |
-| Dash0 | Operator installed on GKE. Namespaces `slidekick` and `ingest` are monitored, and Kubernetes metrics and logs are flowing. A four-golden-signals dashboard is up. See [Observability (Dash0)](#observability-dash0). |
-| Deploys | Live through GitOps (Nov 9, 11:11 MT): a merge to `main` builds the image, and Argo CD (Application `slidekick`) syncs it to namespace `slidekick` within about 3 minutes. |
-| Ingest | First run done (Nov 9, ~11:20 MT): Job `ingest-extract` finished 66/66 in 9 min 10 s, and `ingest-index` finished in 76 s. `kubecon-moments` holds 12,516 documents, one per slide still, covering all 370 talks. The Job manifests aren't in the repo yet. |
-| Radar, Gitar | Live. See [Sponsor tools](#sponsor-tools). |
-| App | FastAPI shell is merged (`app/main.py`, Jinja templates, static JS and CSS). The photo lookup and the camera-roll timeline are still to do. |
+| App | Live at https://slidekick.us: capture, match, photo roll and timeline. |
+| Search | `kubecon-moments` holds 12,516 documents (12,146 slide stills and 370 talks). `kubecon-details` holds each still's fingerprint and thumbnail, and each talk's 2024 schedule slot, room and speakers. |
+| Ingest | All 370 downloadable KubeCon NA 2024 talks: 720p video and English captions (263 from YouTube, 107 transcribed with Whisper). |
+| GKE cluster | App pool: on-demand e2-standard-4 nodes. Spot ingest pool: 0–32 × e2-standard-8 (up to 256 vCPUs). |
+| Deploys | A merge to `main` builds the image, and Argo CD (Application `slidekick`) syncs it within about 3 minutes. |
+| Gitar, Dash0, Radar | Live. See [Sponsor tools](#sponsor-tools). |
 
 ## Sponsor tools
 
@@ -182,14 +234,6 @@ Judged on: Elasticsearch as the core data layer; smart search (keyword, semantic
 - [x] **`/api/lookup` runs the real hybrid query** ([#16](https://github.com/Naterd/hackathon-cnh/pull/16), [#19](https://github.com/Naterd/hackathon-cnh/pull/19)). Live test at 2:56 PM: `docs/test-photos/appset-603s.jpg` returned *Mastering ApplicationSet: Advanced Argo CD Automation* as the top talk, with moments at 549 s, 269 s and 615 s
 - [x] Results come back as real talks and `youtu.be/…?t=` moment links from Elasticsearch. Dash0 traced the lookup at 6.8 s, of which about 1.6 s is the three Elasticsearch calls; the rest is OCR and image work in the pod.
 - [ ] *(bonus)* This week's schedule and decks indexed for live mode. Owner: team.
-
-## How it works
-
-1. **Ingest (GKE spot Jobs).** Crop each recording to its slide area, detect slide changes, drop near-duplicates, OCR each still, and attach the captions spoken while it was on screen. One indexer loads the results into Elasticsearch.
-2. **Lookup.** Flatten the phone photo, OCR it, and run one hybrid search. RRF merges image kNN on the multimodal `semantic` field, OCR keyword matching, and text-to-image matching. Results are grouped by talk and returned with a YouTube link at the right second.
-3. **Camera roll.** Read each photo's EXIF time in the browser, match every photo, and place it on a timeline. For this week's photos, the session running at that time ranks higher.
-
-Stack: FastAPI with server-rendered pages, a PWA front end in plain JavaScript, Elasticsearch Serverless with Elastic Inference Service, and GKE with Argo CD.
 
 ## Observability (Dash0)
 
