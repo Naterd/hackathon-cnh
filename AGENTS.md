@@ -1,6 +1,6 @@
 # Notes for your coding agent
 
-SlideKick: photograph a KubeCon slide and get the talk, the speaker and a YouTube link at the moment that slide appeared. FastAPI with server-rendered pages and a plain-JavaScript PWA, Elasticsearch Serverless, and GKE with Argo CD. The README has the status, architecture and setup. The repo and the image are public.
+SlideKick: photograph a KubeCon slide and get the talk, the speaker and a YouTube link at the moment that slide appeared. FastAPI with server-rendered pages and a plain-JavaScript PWA, Elasticsearch Serverless, and GKE with Argo CD. The README is the short version: what the app does, the big wins and how it works. `docs/details.md` has the status, the sponsor-tool setup and stories, observability and setup. The repo and the image are public.
 
 ## Team rules
 
@@ -58,7 +58,7 @@ Judged: Agent0 and the Dash0 MCP server. Bonus: the Dash0 CLI, dashboards, alert
 - The Dash0 operator injects OpenTelemetry into Python pods in `slidekick` and `ingest`, and turns itself off if the image already has any `opentelemetry-*` package. Don't add one. The exception is `opentelemetry-api`, which fastapi requires: the operator allows it, but only at the exact version its SDK pins (1.44.0), so keep the pin in `app/requirements.txt` and check the operator's startup warning in the pod logs after bumping fastapi. Custom spans and metrics import `opentelemetry` in a `try/except ImportError`, like `ingest/telemetry.py`.
 - Run one uvicorn process per pod and scale with replicas: auto-instrumentation doesn't support uvicorn's `--workers` or `--reload`.
 - Label pod templates with `app.kubernetes.io/name` and `app.kubernetes.io/version`. Ingest Jobs use `app.kubernetes.io/name: slidekick-ingest` and `ingest/telemetry.py`.
-- Query Dash0 through its MCP server (https://dash0.com/docs/dash0/ai/mcp) when connected, otherwise the API with the header file from the README. Never print the token.
+- Query Dash0 through its MCP server (https://dash0.com/docs/dash0/ai/mcp) when connected, otherwise the API with the header file from `docs/details.md` (Observability (Dash0)). Never print the token.
 - Dashboard: *SlideKick: Four Golden Signals* (`slidekick-golden-signals`). For a real issue, ask Agent0 for the root cause and have it open the fix as a PR, which Gitar then reviews like any other.
 
 ## Gitar (Never Merge Broken track)
